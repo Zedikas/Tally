@@ -15,41 +15,29 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    NavigationLink {
-                        AppearanceSettingsView()
-                    } label: {
-                        SettingsNavigationRow(title: "Appearance", systemImage: "paintbrush.fill", color: .pink)
+                Section("Customization") {
+                    NavigationLink { AppearanceSettingsView() } label: {
+                        SettingsNavigationRow(title: "Appearance", subtitle: "Theme, accent presets, and custom color", systemImage: "paintbrush.fill")
                     }
-                    NavigationLink {
-                        AppIconSettingsView()
-                    } label: {
-                        SettingsNavigationRow(title: "App Icon", systemImage: "app.badge.fill", color: .pink)
+                    NavigationLink { AppIconSettingsView() } label: {
+                        SettingsNavigationRow(title: "App Icon", subtitle: "Choose from the complete Tally icon family", systemImage: "app.badge.fill")
                     }
                 }
 
                 Section("Counter Management") {
-                    NavigationLink {
-                        ArchivedCountersView()
-                    } label: {
-                        LabeledContent("Archived Counters", value: "\(store.archivedCounters.count)")
+                    NavigationLink { ArchivedCountersView() } label: {
+                        SettingsNavigationRow(title: "Archived Counters", subtitle: "Restore or permanently remove counters", systemImage: "archivebox.fill", value: "\(store.archivedCounters.count)")
                     }
                     LabeledContent("Pinned Counters", value: "\(store.activeCounters.filter(\.isPinned).count)")
                     LabeledContent("Locked Counters", value: "\(store.activeCounters.filter(\.isLocked).count)")
-                    Text("Pin important counters, lock long-term totals, and restore archived counters here.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Backup & Import") {
-                    Button("Create JSON Backup") { exportURL = store.exportJSONURL() }
-                    Button("Export History CSV") { exportURL = store.exportCSVURL() }
-                    Button("Export Sessions CSV") { exportURL = store.exportSessionsCSVURL() }
-                    if let exportURL {
-                        ShareLink(item: exportURL) { Label("Share Latest Export", systemImage: "square.and.arrow.up") }
-                    }
-                    Button { showingImporter = true } label: {
-                        Label("Preview & Import JSON Backup", systemImage: "doc.text.magnifyingglass")
-                    }
+                    Button { exportURL = store.exportJSONURL() } label: { Label("Create JSON Backup", systemImage: "externaldrive.fill") }
+                    Button { exportURL = store.exportCSVURL() } label: { Label("Export History CSV", systemImage: "clock.arrow.circlepath") }
+                    Button { exportURL = store.exportSessionsCSVURL() } label: { Label("Export Sessions CSV", systemImage: "timer") }
+                    if let exportURL { ShareLink(item: exportURL) { Label("Share Latest Export", systemImage: "square.and.arrow.up") } }
+                    Button { showingImporter = true } label: { Label("Preview & Import JSON Backup", systemImage: "doc.text.magnifyingglass") }
                     if let importMessage { Text(importMessage).font(.caption).foregroundStyle(.secondary) }
                 }
 
@@ -69,7 +57,7 @@ struct SettingsView: View {
                     } catch { importMessage = "Import failed: \(error.localizedDescription)" }
                 }
             }
-            .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json], allowsMultipleSelection: false, onCompletion: handleImport)
+            .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json], allowsMultipleSelection: false) { handleImport($0) }
         }
     }
 
@@ -78,12 +66,12 @@ struct SettingsView: View {
         case .success(let urls):
             guard let url = urls.first else { importMessage = "No backup file selected."; return }
             do {
-                let securityScoped = url.startAccessingSecurityScopedResource()
-                defer { if securityScoped { url.stopAccessingSecurityScopedResource() } }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 let data = try Data(contentsOf: url)
-                let localURL = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Import_\(UUID().uuidString).json")
-                try data.write(to: localURL, options: .atomic)
-                importPreview = try store.previewBackup(from: localURL)
+                let local = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Import_\(UUID().uuidString).json")
+                try data.write(to: local, options: .atomic)
+                importPreview = try store.previewBackup(from: local)
                 importMessage = nil
             } catch { importMessage = "Preview failed: \(error.localizedDescription)" }
         case .failure(let error): importMessage = "Import failed: \(error.localizedDescription)"
@@ -93,61 +81,157 @@ struct SettingsView: View {
 
 struct SettingsNavigationRow: View {
     let title: String
+    let subtitle: String
     let systemImage: String
-    let color: Color
+    var value: String? = nil
+
     var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: systemImage).font(.title2).foregroundStyle(color).frame(width: 38)
-            Text(title).font(.title3)
-        }.padding(.vertical, 8)
+        HStack(spacing: 14) {
+            Image(systemName: systemImage).font(.title2).frame(width: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let value { Text(value).foregroundStyle(.secondary) }
+        }.padding(.vertical, 5)
+    }
+}
+
+struct AppearanceSettingsView: View {
+    @EnvironmentObject private var store: TallyStore
+    @AppStorage(StoredAccentColor.presetKey) private var accentRaw = TallyAccentColor.blue.rawValue
+    @AppStorage(StoredAccentColor.customKey) private var customHex = "FF1883"
+    @State private var customColor = Color.pink
+    private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Picker("Appearance", selection: $store.theme) {
+                    Text("Default").tag(TallyTheme.system)
+                    Text("Light").tag(TallyTheme.light)
+                    Text("Dark").tag(TallyTheme.dark)
+                    Text("OLED").tag(TallyTheme.oled)
+                }
+                .pickerStyle(.segmented)
+                .padding(14)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+
+                Text("Accent Theme").font(.title2.weight(.heavy))
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(TallyAccentColor.allCases) { accent in
+                        Button { accentRaw = accent.rawValue } label: {
+                            VStack(spacing: 10) {
+                                ZStack {
+                                    Circle().fill(accent.color.opacity(0.25)).frame(width: 54, height: 54)
+                                    Circle().fill(accent.color).frame(width: 34, height: 34)
+                                    if accentRaw == accent.rawValue { Image(systemName: "checkmark").fontWeight(.black).foregroundStyle(.white) }
+                                }
+                                Text(accent.title).font(.subheadline.weight(.semibold)).foregroundStyle(accent.color)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 16)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                        }.buttonStyle(.plain)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Custom Theme Color").font(.headline)
+                            Text("Use any color instead of a preset.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        ColorPicker("", selection: $customColor, supportsOpacity: false).labelsHidden()
+                    }
+                    HStack {
+                        Circle().fill(customColor).frame(width: 34, height: 34)
+                        Text("#\(customHex.uppercased())").font(.system(.body, design: .monospaced))
+                        Spacer()
+                        Button("Use Custom") {
+                            customHex = customColor.hexString() ?? customHex
+                            accentRaw = "custom"
+                        }.buttonStyle(.borderedProminent)
+                    }
+                }
+                .padding(18)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+            }.padding()
+        }
+        .navigationTitle("Appearance")
+        .onAppear { customColor = Color(hex: customHex) ?? .pink }
+        .onChange(of: customColor) { _, value in customHex = value.hexString() ?? customHex }
+    }
+}
+
+struct AppIconSettingsView: View {
+    @State private var iconMessage: String?
+
+    var body: some View {
+        List {
+            Section("Tally Icon Family") {
+                ForEach(TallyIcon.allCases) { icon in
+                    Button { setIcon(icon) } label: {
+                        HStack(spacing: 16) {
+                            Image(icon.previewName)
+                                .resizable().scaledToFit().frame(width: 64, height: 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.16)))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(icon.title).font(.headline).foregroundStyle(.primary)
+                                Text(icon.subtitle).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if icon.isSelected { Image(systemName: "checkmark").font(.title3.weight(.heavy)).foregroundStyle(icon.tint) }
+                        }.padding(.vertical, 6)
+                    }.buttonStyle(.plain)
+                }
+            }
+            if let iconMessage { Section { Text(iconMessage).font(.caption).foregroundStyle(.secondary) } }
+        }
+        .navigationTitle("App Icon")
+    }
+
+    private func setIcon(_ icon: TallyIcon) {
+        guard UIApplication.shared.supportsAlternateIcons else { iconMessage = "This install method does not support alternate icons."; return }
+        UIApplication.shared.setAlternateIconName(icon.iconName) { error in
+            iconMessage = error?.localizedDescription ?? "Icon changed to \(icon.title)."
+        }
     }
 }
 
 struct ArchivedCountersView: View {
     @EnvironmentObject private var store: TallyStore
     @State private var searchText = ""
-
-    private var counters: [TallyCounter] {
-        guard !searchText.isEmpty else { return store.archivedCounters }
-        return store.archivedCounters.filter { $0.name.localizedCaseInsensitiveContains(searchText) || $0.displayGroup.localizedCaseInsensitiveContains(searchText) }
+    private var filtered: [TallyCounter] {
+        searchText.isEmpty ? store.archivedCounters : store.archivedCounters.filter { $0.name.localizedCaseInsensitiveContains(searchText) || $0.displayGroup.localizedCaseInsensitiveContains(searchText) }
     }
-
     var body: some View {
         List {
-            if counters.isEmpty {
-                ContentUnavailableView("Archive Empty", systemImage: "archivebox", description: Text("Archived counters will appear here."))
-            } else {
-                ForEach(counters) { ArchivedCounterRow(counter: $0) }
-            }
+            if filtered.isEmpty { ContentUnavailableView("Archive Empty", systemImage: "archivebox", description: Text("Archived counters will appear here.")) }
+            else { ForEach(filtered) { ArchivedCounterRow(counter: $0) } }
         }
-        .navigationTitle("Archive")
-        .searchable(text: $searchText, prompt: "Search archive")
+        .navigationTitle("Archive").searchable(text: $searchText, prompt: "Search archive")
     }
 }
 
 struct ArchivedCounterRow: View {
     @EnvironmentObject private var store: TallyStore
     let counter: TallyCounter
-    @State private var showingDeleteConfirmation = false
+    @State private var showingDelete = false
     private var color: CounterColor { CounterColor(rawValue: counter.colorName) ?? .gray }
-
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: counter.symbol).foregroundStyle(color.color).frame(width: 34, height: 34)
-                .background(color.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(counter.name).font(.headline)
-                Text("\(counter.displayGroup) • value \(counter.value)").font(.caption).foregroundStyle(.secondary)
-            }
+            Image(systemName: counter.symbol).foregroundStyle(color.color).frame(width: 36, height: 36).background(color.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading) { Text(counter.name).font(.headline); Text("\(counter.displayGroup) • value \(counter.value)").font(.caption).foregroundStyle(.secondary) }
             Spacer()
             Menu {
                 Button("Restore", systemImage: "arrow.uturn.backward") { store.restoreCounter(counter) }
-                Button("Delete Forever", systemImage: "trash", role: .destructive) { showingDeleteConfirmation = true }
+                Button("Delete Forever", systemImage: "trash", role: .destructive) { showingDelete = true }
             } label: { Image(systemName: "ellipsis.circle").font(.title3) }
         }
-        .confirmationDialog("Delete \(counter.name) forever?", isPresented: $showingDeleteConfirmation) {
-            Button("Delete Forever", role: .destructive) { store.permanentlyDeleteCounter(counter) }
-        } message: { Text("This also removes its history and sessions and cannot be undone.") }
+        .confirmationDialog("Delete \(counter.name) forever?", isPresented: $showingDelete) { Button("Delete Forever", role: .destructive) { store.permanentlyDeleteCounter(counter) } }
     }
 }
 
@@ -155,14 +239,9 @@ struct BackupImportPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     let preview: TallyBackupPreview
     let onImport: (Bool) -> Void
-
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Text("Review this backup before choosing whether to merge it into Tally or replace current data.")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                }
                 Section("Backup Details") {
                     LabeledContent("Version", value: preview.version)
                     LabeledContent("Exported", value: preview.exportedAt.formatted(date: .abbreviated, time: .shortened))
@@ -172,7 +251,7 @@ struct BackupImportPreviewView: View {
                     LabeledContent("Counters", value: "\(preview.counterCount)")
                     LabeledContent("Active", value: "\(preview.activeCounterCount)")
                     LabeledContent("Archived", value: "\(preview.archivedCounterCount)")
-                    LabeledContent("History Entries", value: "\(preview.historyCount)")
+                    LabeledContent("History", value: "\(preview.historyCount)")
                     LabeledContent("Sessions", value: "\(preview.sessionCount)")
                 }
                 Section {
@@ -180,8 +259,7 @@ struct BackupImportPreviewView: View {
                     Button(role: .destructive) { onImport(true); dismiss() } label: { Label("Replace Current Data", systemImage: "arrow.triangle.2.circlepath") }
                 }
             }
-            .navigationTitle("Import")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Import Preview").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
     }
@@ -192,18 +270,18 @@ struct TallyIcon: Identifiable, CaseIterable {
     let title: String
     let subtitle: String
     let iconName: String?
-    let systemImage: String
+    let previewName: String
     let tint: Color
-
+    var isSelected: Bool { UIApplication.shared.alternateIconName == iconName || (UIApplication.shared.alternateIconName == nil && iconName == nil) }
     static let allCases: [TallyIcon] = [
-        .init(id: "primary", title: "Classic Blue", subtitle: "Tally", iconName: nil, systemImage: "number.circle.fill", tint: .blue),
-        .init(id: "neon", title: "Neon Dark", subtitle: "Tally", iconName: "NeonDark", systemImage: "sparkles", tint: .blue),
-        .init(id: "glass", title: "Glass", subtitle: "Tally", iconName: "Glass", systemImage: "circle.dashed", tint: .cyan),
-        .init(id: "pearl", title: "Pearl", subtitle: "Tally", iconName: "Pearl", systemImage: "circle.fill", tint: .gray),
-        .init(id: "amber", title: "Amber", subtitle: "Tally", iconName: "Amber", systemImage: "sun.max.fill", tint: .orange),
-        .init(id: "green", title: "Tech Green", subtitle: "Tally", iconName: "TechGreen", systemImage: "bolt.fill", tint: .green),
-        .init(id: "purple", title: "Cosmic Purple", subtitle: "Tally", iconName: "CosmicPurple", systemImage: "moon.stars.fill", tint: .purple),
-        .init(id: "synth", title: "Synthwave", subtitle: "Tally", iconName: "Synthwave", systemImage: "waveform.path", tint: .pink)
+        .init(id: "primary", title: "Classic Blue", subtitle: "The original polished Tally counter", iconName: nil, previewName: "TallyIconClassicBlue", tint: .blue),
+        .init(id: "neon", title: "Neon Dark", subtitle: "Electric blue for OLED screens", iconName: "NeonDark", previewName: "TallyIconNeonDark", tint: .blue),
+        .init(id: "glass", title: "Glass", subtitle: "Soft frosted blue", iconName: "Glass", previewName: "TallyIconGlass", tint: .cyan),
+        .init(id: "pearl", title: "Pearl", subtitle: "Bright and minimal", iconName: "Pearl", previewName: "TallyIconPearl", tint: .gray),
+        .init(id: "amber", title: "Amber", subtitle: "Warm golden counter", iconName: "Amber", previewName: "TallyIconAmber", tint: .orange),
+        .init(id: "green", title: "Tech Green", subtitle: "Neon productivity", iconName: "TechGreen", previewName: "TallyIconTechGreen", tint: .green),
+        .init(id: "purple", title: "Cosmic Purple", subtitle: "Deep violet glow", iconName: "CosmicPurple", previewName: "TallyIconCosmicPurple", tint: .purple),
+        .init(id: "synth", title: "Synthwave", subtitle: "Pink, purple, and cyan", iconName: "Synthwave", previewName: "TallyIconSynthwave", tint: .pink)
     ]
 }
 
@@ -215,40 +293,33 @@ struct ChangelogView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Tally v1.6").font(.title2.weight(.heavy))
-                        Text("A major single-target upgrade focused on deeper counter management, analytics, folders, and appearance customization.")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text("A major single-target upgrade focused on counter depth, automation, analytics, folders, safety, and polished customization.").foregroundStyle(.secondary)
                     }.padding(.vertical, 8)
                 }
                 Section("v1.6") {
-                    ChangelogRow(title: "Counter Details", detail: "Tap a counter card to open its dashboard with quick actions, analytics, chart, notes, milestones, and recent history.")
-                    ChangelogRow(title: "Pinned Favorites", detail: "Pin important counters into a dedicated Favorites section above folders.")
-                    ChangelogRow(title: "Folder Styling", detail: "Folders show totals, counter counts, custom colors, and retain collapsible state.")
-                    ChangelogRow(title: "Smart Resets", detail: "Optionally reset counters automatically when a new day, week, or month begins.")
-                    ChangelogRow(title: "Milestones", detail: "Configure milestone values and record celebratory history events when reached.")
-                    ChangelogRow(title: "Counter Locking", detail: "Lock counters to prevent accidental value changes and resets.")
-                    ChangelogRow(title: "Advanced Analytics", detail: "Counter detail pages include change totals, net activity, best day, milestones, and 30-day charts.")
-                    ChangelogRow(title: "Appearance Redesign", detail: "Appearance and App Icon now have dedicated Settings pages inspired by the supplied reference design.")
-                    ChangelogRow(title: "Stable Color Selection", detail: "Counter and folder colors use full navigation pages instead of displaced popovers.")
+                    ChangelogRow(title: "Counter Detail Pages", detail: "Dedicated dashboards with quick actions, notes, milestones, sessions, recent history, averages, and charts.")
+                    ChangelogRow(title: "Favorites", detail: "Pin important counters into a dedicated section above folders.")
+                    ChangelogRow(title: "Folder Styling", detail: "Choose folder colors and see counter counts and combined totals in folder headers.")
+                    ChangelogRow(title: "Smart Resets", detail: "Optional daily, weekly, or monthly automatic resets when Tally opens.")
+                    ChangelogRow(title: "Milestones", detail: "Configure milestone values and record celebrations in History when they are reached.")
+                    ChangelogRow(title: "Counter Locking", detail: "Protect counters from accidental changes and resets.")
+                    ChangelogRow(title: "Appearance Redesign", detail: "Dedicated appearance page, preset accent tiles, custom color picker, and stable full-page selectors.")
+                    ChangelogRow(title: "App Icon Gallery", detail: "Large icon previews, descriptions, and selection checkmarks inspired by the provided reference design.")
                 }
                 Section("Earlier Releases") {
-                    ChangelogRow(title: "v1.5.1", detail: "True-color selectors and Backup & Import layout fixes.")
                     ChangelogRow(title: "v1.5", detail: "Exact value entry, collapsible folders, readable symbols, and accent colors.")
-                    ChangelogRow(title: "v1.4", detail: "Timed sessions and reset reminder metadata.")
+                    ChangelogRow(title: "v1.4", detail: "Timed sessions and reset schedules.")
+                    ChangelogRow(title: "v1.3", detail: "Archive management, custom steps, and import preview.")
                 }
             }
-            .navigationTitle("Changelog")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Changelog").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }
     }
 }
 
 struct ChangelogRow: View {
-    let title: String; let detail: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.headline)
-            Text(detail).font(.subheadline).foregroundStyle(.secondary)
-        }.padding(.vertical, 3)
-    }
+    let title: String
+    let detail: String
+    var body: some View { VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline); Text(detail).font(.subheadline).foregroundStyle(.secondary) }.padding(.vertical, 3) }
 }
