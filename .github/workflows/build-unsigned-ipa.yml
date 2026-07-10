@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.5.1 build 7 color-menu and settings-layout fix.
+# Tally v1.6 build 8: details, favorites, folders, smart resets, milestones, analytics, locks, and redesigned appearance.
 
 on:
   workflow_dispatch:
@@ -83,8 +83,8 @@ jobs:
           ICON_SRC="Tally/Resources/Assets.xcassets/AppIcon.appiconset"
           ALT_ICON_SRC="Tally/Resources/AlternateIcons"
 
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.5.1" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.5.1" "$APP_PATH/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 7" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 7" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.6" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.6" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 8" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 8" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tally" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Tally" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :UILaunchStoryboardName LaunchScreen" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :UILaunchStoryboardName string LaunchScreen" "$APP_PATH/Info.plist"
@@ -132,15 +132,15 @@ jobs:
         run: |
           set -e
           APP_PATH=$(find build/DerivedData -name "Tally.app" -type d | head -n 1)
-          rm -rf Payload Tally_v1_5_1_unsigned.ipa Tally_v1_5_unsigned.ipa Tally_v1_4_unsigned.ipa Tally_v1_3_unsigned.ipa Tally_v1_2_unsigned.ipa Tally_v1_1_unsigned.ipa Tally_v1_0_unsigned.ipa
+          rm -rf Payload Tally_v1_6_unsigned.ipa Tally_v1_5_1_unsigned.ipa Tally_v1_5_unsigned.ipa Tally_v1_4_unsigned.ipa Tally_v1_3_unsigned.ipa Tally_v1_2_unsigned.ipa Tally_v1_1_unsigned.ipa Tally_v1_0_unsigned.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          /usr/bin/zip -r Tally_v1_5_1_unsigned.ipa Payload
+          /usr/bin/zip -r Tally_v1_6_unsigned.ipa Payload
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Tally_v1_5_1_unsigned_ipa
-          path: Tally_v1_5_1_unsigned.ipa
+          name: Tally_v1_6_unsigned_ipa
+          path: Tally_v1_6_unsigned.ipa
           if-no-files-found: error
           retention-days: 7
