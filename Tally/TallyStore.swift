@@ -15,38 +15,20 @@ final class TallyStore: ObservableObject {
     init() {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         load()
-        if counters.isEmpty && history.isEmpty {
-            counters = Self.sampleCounters
-        }
+        if counters.isEmpty && history.isEmpty { counters = Self.sampleCounters }
     }
 
-    var activeCounters: [TallyCounter] {
-        counters.filter { !$0.isArchived }
-    }
-
-    var archivedCounters: [TallyCounter] {
-        counters.filter { $0.isArchived }
-    }
-
-    var activeSessions: [TallySession] {
-        sessions.filter(\.isActive).sorted { $0.startedAt > $1.startedAt }
-    }
-
-    var finishedSessions: [TallySession] {
-        sessions.filter { !$0.isActive }.sorted { $0.startedAt > $1.startedAt }
-    }
-
-    var groups: [String] {
-        groups(for: activeCounters)
-    }
+    var activeCounters: [TallyCounter] { counters.filter { !$0.isArchived } }
+    var archivedCounters: [TallyCounter] { counters.filter(\.isArchived) }
+    var activeSessions: [TallySession] { sessions.filter(\.isActive).sorted { $0.startedAt > $1.startedAt } }
+    var finishedSessions: [TallySession] { sessions.filter { !$0.isActive }.sorted { $0.startedAt > $1.startedAt } }
+    var groups: [String] { groups(for: activeCounters) }
 
     func groups(for counters: [TallyCounter]) -> [String] {
-        Array(Set(counters.map { $0.displayGroup })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        Array(Set(counters.map(\.displayGroup))).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
-    func counters(in group: String) -> [TallyCounter] {
-        activeCounters.filter { $0.displayGroup == group }
-    }
+    func counters(in group: String) -> [TallyCounter] { activeCounters.filter { $0.displayGroup == group } }
 
     @discardableResult
     func addCounter(name: String, group: String, goal: Int?, symbol: String, color: CounterColor, notes: String, stepValues: [Int] = [1, 5, 10], resetReminder: ResetReminder = .none) -> TallyCounter? {
@@ -57,9 +39,7 @@ final class TallyStore: ObservableObject {
         return counter
     }
 
-    func deleteCounter(_ counter: TallyCounter) {
-        archiveCounter(counter)
-    }
+    func deleteCounter(_ counter: TallyCounter) { archiveCounter(counter) }
 
     func archiveCounter(_ counter: TallyCounter) {
         guard let index = counters.firstIndex(where: { $0.id == counter.id }) else { return }
@@ -81,9 +61,8 @@ final class TallyStore: ObservableObject {
 
     func updateCounter(_ counter: TallyCounter) {
         guard let index = counters.firstIndex(where: { $0.id == counter.id }) else { return }
-        var updated = counter
+        var updated = normalizedCounter(counter)
         updated.updatedAt = Date()
-        updated.stepValues = TallyCounter.sanitizedStepValues(updated.stepValues)
         counters[index] = updated
     }
 
@@ -95,6 +74,10 @@ final class TallyStore: ObservableObject {
         copy.createdAt = Date()
         copy.updatedAt = Date()
         copy.isArchived = false
+        copy.isPinned = false
+        copy.isLocked = false
+        copy.reachedMilestones = []
+        copy.lastAutomaticResetAt = nil
         counters.insert(copy, at: min(index + 1, counters.endIndex))
     }
 
@@ -107,7 +90,7 @@ final class TallyStore: ObservableObject {
     }
 
     func adjust(_ counter: TallyCounter, by delta: Int) {
-        guard let index = counters.firstIndex(where: { $0.id == counter.id }) else { return }
+        guard let index = counters.firstIndex(where: { $0.id == counter.id }), !counters[index].isLocked else { return }
         let before = counters[index].value
         let after = before + delta
         counters[index].value = after
@@ -116,7 +99,7 @@ final class TallyStore: ObservableObject {
     }
 
     func reset(_ counter: TallyCounter) {
-        guard let index = counters.firstIndex(where: { $0.id == counter.id }) else { return }
+        guard let index = counters.firstIndex(where: { $0.id == counter.id }), !counters[index].isLocked else { return }
         let before = counters[index].value
         counters[index].value = 0
         counters[index].updatedAt = Date()
@@ -124,16 +107,13 @@ final class TallyStore: ObservableObject {
     }
 
     func undoLastAction() {
-        guard let entry = history.first,
-              let index = counters.firstIndex(where: { $0.id == entry.counterID }) else { return }
+        guard let entry = history.first, let index = counters.firstIndex(where: { $0.id == entry.counterID }) else { return }
         counters[index].value = entry.beforeValue
         counters[index].updatedAt = Date()
         history.removeFirst()
     }
 
-    func clearHistory() {
-        history.removeAll()
-    }
+    func clearHistory() { history.removeAll() }
 
     @discardableResult
     func startSession(counterID: UUID?, title: String, notes: String) -> TallySession {
@@ -160,28 +140,15 @@ final class TallyStore: ObservableObject {
         sessions[index].endValue = counterValue ?? sessions[index].startValue
     }
 
-    func cancelSession(_ session: TallySession) {
-        sessions.removeAll { $0.id == session.id && $0.isActive }
-    }
-
-    func deleteSession(_ session: TallySession) {
-        sessions.removeAll { $0.id == session.id }
-    }
-
-    func activeSession(for counter: TallyCounter) -> TallySession? {
-        activeSessions.first { $0.counterID == counter.id }
-    }
+    func cancelSession(_ session: TallySession) { sessions.removeAll { $0.id == session.id && $0.isActive } }
+    func deleteSession(_ session: TallySession) { sessions.removeAll { $0.id == session.id } }
+    func activeSession(for counter: TallyCounter) -> TallySession? { activeSessions.first { $0.counterID == counter.id } }
 
     func exportJSONURL() -> URL? {
-        let backup = TallyBackup(version: "1.4", counters: counters, history: history, theme: theme, sessions: sessions)
+        let backup = TallyBackup(version: "1.6", counters: counters, history: history, theme: theme, sessions: sessions)
         guard let data = try? encoder.encode(backup) else { return nil }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Backup_\(Self.timestamp()).json")
-        do {
-            try data.write(to: url, options: .atomic)
-            return url
-        } catch {
-            return nil
-        }
+        do { try data.write(to: url, options: .atomic); return url } catch { return nil }
     }
 
     func exportCSVURL() -> URL? {
@@ -189,21 +156,12 @@ final class TallyStore: ObservableObject {
         let formatter = ISO8601DateFormatter()
         for entry in history.reversed() {
             rows.append([
-                formatter.string(from: entry.date),
-                entry.counterName,
-                entry.action,
-                String(entry.beforeValue),
-                String(entry.afterValue),
-                String(entry.delta)
+                formatter.string(from: entry.date), entry.counterName, entry.action,
+                String(entry.beforeValue), String(entry.afterValue), String(entry.delta)
             ].map(Self.csvEscape).joined(separator: ","))
         }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_History_\(Self.timestamp()).csv")
-        do {
-            try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
-            return url
-        } catch {
-            return nil
-        }
+        do { try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8); return url } catch { return nil }
     }
 
     func exportSessionsCSVURL() -> URL? {
@@ -211,24 +169,14 @@ final class TallyStore: ObservableObject {
         let formatter = ISO8601DateFormatter()
         for session in sessions.reversed() {
             rows.append([
-                session.title,
-                session.counterName,
-                formatter.string(from: session.startedAt),
-                session.endedAt.map { formatter.string(from: $0) } ?? "",
-                String(Int(session.duration)),
-                String(session.startValue),
-                session.endValue.map(String.init) ?? "",
-                session.delta.map(String.init) ?? "",
-                session.notes
+                session.title, session.counterName, formatter.string(from: session.startedAt),
+                session.endedAt.map { formatter.string(from: $0) } ?? "", String(Int(session.duration)),
+                String(session.startValue), session.endValue.map(String.init) ?? "",
+                session.delta.map(String.init) ?? "", session.notes
             ].map(Self.csvEscape).joined(separator: ","))
         }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Sessions_\(Self.timestamp()).csv")
-        do {
-            try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
-            return url
-        } catch {
-            return nil
-        }
+        do { try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8); return url } catch { return nil }
     }
 
     func previewBackup(from url: URL) throws -> TallyBackupPreview {
@@ -240,7 +188,7 @@ final class TallyStore: ObservableObject {
             exportedAt: backup.exportedAt,
             counterCount: backup.counters.count,
             activeCounterCount: backup.counters.filter { !$0.isArchived }.count,
-            archivedCounterCount: backup.counters.filter { $0.isArchived }.count,
+            archivedCounterCount: backup.counters.filter(\.isArchived).count,
             historyCount: backup.history.count,
             sessionCount: backup.sessions.count,
             themeTitle: backup.theme.title
@@ -249,12 +197,7 @@ final class TallyStore: ObservableObject {
 
     func importBackup(from url: URL, replaceExisting: Bool) throws {
         let securityScoped = url.startAccessingSecurityScopedResource()
-        defer {
-            if securityScoped {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
+        defer { if securityScoped { url.stopAccessingSecurityScopedResource() } }
         let data = try Data(contentsOf: url)
         let backup = try decoder.decode(TallyBackup.self, from: data)
 
@@ -276,10 +219,8 @@ final class TallyStore: ObservableObject {
                 return imported
             }
 
-            for index in importedCounters.indices {
-                if counters.contains(where: { $0.name == importedCounters[index].name && $0.displayGroup == importedCounters[index].displayGroup }) {
-                    importedCounters[index].name = uniqueImportedName(for: importedCounters[index].name)
-                }
+            for index in importedCounters.indices where counters.contains(where: { $0.name == importedCounters[index].name && $0.displayGroup == importedCounters[index].displayGroup }) {
+                importedCounters[index].name = uniqueImportedName(for: importedCounters[index].name)
             }
 
             let importedHistory = backup.history.map { entry in
@@ -292,9 +233,7 @@ final class TallyStore: ObservableObject {
             let importedSessions = backup.sessions.map { session in
                 var imported = session
                 imported.id = UUID()
-                if let oldCounterID = session.counterID {
-                    imported.counterID = idMap[oldCounterID]
-                }
+                if let oldCounterID = session.counterID { imported.counterID = idMap[oldCounterID] }
                 return imported
             }
 
@@ -305,14 +244,13 @@ final class TallyStore: ObservableObject {
     }
 
     private func save() {
-        let backup = TallyBackup(version: "1.4", counters: counters, history: history, theme: theme, sessions: sessions)
+        let backup = TallyBackup(version: "1.6", counters: counters, history: history, theme: theme, sessions: sessions)
         guard let data = try? encoder.encode(backup) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let backup = try? decoder.decode(TallyBackup.self, from: data) else { return }
+        guard let data = UserDefaults.standard.data(forKey: storageKey), let backup = try? decoder.decode(TallyBackup.self, from: data) else { return }
         counters = backup.counters.map(normalizedCounter)
         history = backup.history
         sessions = backup.sessions
@@ -322,6 +260,9 @@ final class TallyStore: ObservableObject {
     private func normalizedCounter(_ counter: TallyCounter) -> TallyCounter {
         var normalized = counter
         normalized.stepValues = TallyCounter.sanitizedStepValues(counter.stepValues)
+        normalized.milestones = TallyCounter.sanitizedMilestones(counter.milestones)
+        normalized.reachedMilestones = Array(Set(counter.reachedMilestones)).sorted()
+        if CounterColor(rawValue: normalized.folderColorName) == nil { normalized.folderColorName = normalized.colorName }
         return normalized
     }
 
@@ -341,10 +282,8 @@ final class TallyStore: ObservableObject {
         var candidate = base
         guard counters.contains(where: { $0.name.localizedCaseInsensitiveCompare(candidate) == .orderedSame }) else { return candidate }
         var number = 2
-        repeat {
-            candidate = "\(base) Imported \(number)"
-            number += 1
-        } while counters.contains(where: { $0.name.localizedCaseInsensitiveCompare(candidate) == .orderedSame })
+        repeat { candidate = "\(base) Imported \(number)"; number += 1 }
+        while counters.contains(where: { $0.name.localizedCaseInsensitiveCompare(candidate) == .orderedSame })
         return candidate
     }
 
@@ -360,8 +299,8 @@ final class TallyStore: ObservableObject {
     }
 
     static let sampleCounters: [TallyCounter] = [
-        TallyCounter(name: "Water", value: 3, goal: 8, group: "Today", symbol: "drop.fill", colorName: CounterColor.blue.rawValue, notes: "Daily glasses", stepValues: [1, 2, 4], resetReminder: .daily),
-        TallyCounter(name: "Push-ups", value: 25, goal: 100, group: "Fitness", symbol: "figure.strengthtraining.traditional", colorName: CounterColor.green.rawValue, notes: "", stepValues: [1, 10, 25], resetReminder: .weekly),
-        TallyCounter(name: "Study reps", value: 12, goal: nil, group: "Focus", symbol: "book.fill", colorName: CounterColor.purple.rawValue, notes: "", stepValues: [1, 5, 10], resetReminder: .none)
+        TallyCounter(name: "Water", value: 3, goal: 8, group: "Today", symbol: "drop.fill", colorName: CounterColor.blue.rawValue, notes: "Daily glasses", stepValues: [1, 2, 4], resetReminder: .daily, automaticResetEnabled: true, milestones: [8, 30, 100]),
+        TallyCounter(name: "Push-ups", value: 25, goal: 100, group: "Fitness", symbol: "figure.strengthtraining.traditional", colorName: CounterColor.green.rawValue, notes: "", stepValues: [1, 10, 25], resetReminder: .weekly, milestones: [50, 100, 500]),
+        TallyCounter(name: "Study reps", value: 12, goal: nil, group: "Focus", symbol: "book.fill", colorName: CounterColor.purple.rawValue, notes: "", stepValues: [1, 5, 10], resetReminder: .none, milestones: [25, 50, 100])
     ]
 }
