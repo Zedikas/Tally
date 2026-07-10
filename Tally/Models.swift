@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 struct TallyCounter: Identifiable, Codable, Equatable {
-    var id: UUID = UUID()
+    var id: UUID
     var name: String
     var value: Int
     var goal: Int?
@@ -10,8 +10,38 @@ struct TallyCounter: Identifiable, Codable, Equatable {
     var symbol: String
     var colorName: CounterColor.RawValue
     var notes: String
-    var createdAt: Date = Date()
-    var updatedAt: Date = Date()
+    var createdAt: Date
+    var updatedAt: Date
+    var isArchived: Bool
+    var stepValues: [Int]
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        value: Int,
+        goal: Int?,
+        group: String,
+        symbol: String,
+        colorName: CounterColor.RawValue,
+        notes: String,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
+        isArchived: Bool = false,
+        stepValues: [Int] = [1, 5, 10]
+    ) {
+        self.id = id
+        self.name = name
+        self.value = value
+        self.goal = goal
+        self.group = group
+        self.symbol = symbol
+        self.colorName = colorName
+        self.notes = notes
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isArchived = isArchived
+        self.stepValues = Self.sanitizedStepValues(stepValues)
+    }
 
     var displayGroup: String {
         group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "General" : group
@@ -20,6 +50,54 @@ struct TallyCounter: Identifiable, Codable, Equatable {
     var progress: Double? {
         guard let goal, goal > 0 else { return nil }
         return min(max(Double(value) / Double(goal), 0), 1)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, value, goal, group, symbol, colorName, notes, createdAt, updatedAt, isArchived, stepValues
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        value = try container.decode(Int.self, forKey: .value)
+        goal = try container.decodeIfPresent(Int.self, forKey: .goal)
+        group = try container.decode(String.self, forKey: .group)
+        symbol = try container.decode(String.self, forKey: .symbol)
+        colorName = try container.decode(CounterColor.RawValue.self, forKey: .colorName)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+        isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+        stepValues = Self.sanitizedStepValues(try container.decodeIfPresent([Int].self, forKey: .stepValues) ?? [1, 5, 10])
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(value, forKey: .value)
+        try container.encodeIfPresent(goal, forKey: .goal)
+        try container.encode(group, forKey: .group)
+        try container.encode(symbol, forKey: .symbol)
+        try container.encode(colorName, forKey: .colorName)
+        try container.encode(notes, forKey: .notes)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(isArchived, forKey: .isArchived)
+        try container.encode(Self.sanitizedStepValues(stepValues), forKey: .stepValues)
+    }
+
+    static func sanitizedStepValues(_ values: [Int]) -> [Int] {
+        let cleaned = values
+            .filter { $0 > 0 }
+            .map { min($0, 9999) }
+        var unique: [Int] = []
+        for value in cleaned where !unique.contains(value) {
+            unique.append(value)
+        }
+        let result = Array(unique.prefix(3))
+        return result.isEmpty ? [1, 5, 10] : result
     }
 }
 
@@ -108,24 +186,37 @@ struct CounterTemplate: Identifiable, Equatable {
     var symbol: String
     var color: CounterColor
     var notes: String
+    var stepValues: [Int]
 
     static let allCases: [CounterTemplate] = [
-        CounterTemplate(id: "simple", title: "Simple Tally", subtitle: "Basic count-up tracker", name: "New Counter", group: "General", goal: nil, symbol: "number.circle.fill", color: .blue, notes: ""),
-        CounterTemplate(id: "daily-goal", title: "Daily Goal", subtitle: "Track progress toward a target", name: "Daily Goal", group: "Today", goal: 10, symbol: "checkmark.circle.fill", color: .green, notes: "Resets manually for now."),
-        CounterTemplate(id: "water", title: "Water", subtitle: "Daily glasses or bottles", name: "Water", group: "Today", goal: 8, symbol: "drop.fill", color: .blue, notes: "Daily hydration"),
-        CounterTemplate(id: "workout", title: "Workout Reps", subtitle: "Sets, reps, or exercises", name: "Workout Reps", group: "Fitness", goal: 100, symbol: "figure.strengthtraining.traditional", color: .green, notes: ""),
-        CounterTemplate(id: "inventory", title: "Inventory", subtitle: "Stock or item tracking", name: "Inventory", group: "Inventory", goal: nil, symbol: "shippingbox.fill", color: .orange, notes: "Use + and − to adjust stock."),
-        CounterTemplate(id: "score", title: "Game Score", subtitle: "Simple score counter", name: "Player Score", group: "Games", goal: nil, symbol: "gamecontroller.fill", color: .purple, notes: ""),
-        CounterTemplate(id: "reading", title: "Reading", subtitle: "Pages, chapters, or sessions", name: "Reading", group: "Focus", goal: 50, symbol: "book.fill", color: .purple, notes: ""),
-        CounterTemplate(id: "streak", title: "Streak", subtitle: "Count days or wins", name: "Streak", group: "Habits", goal: nil, symbol: "flame.fill", color: .red, notes: ""),
-        CounterTemplate(id: "shopping", title: "Shopping List", subtitle: "Items collected or packed", name: "Items", group: "Shopping", goal: nil, symbol: "cart.fill", color: .teal, notes: "")
+        CounterTemplate(id: "simple", title: "Simple Tally", subtitle: "Basic count-up tracker", name: "New Counter", group: "General", goal: nil, symbol: "number.circle.fill", color: .blue, notes: "", stepValues: [1, 5, 10]),
+        CounterTemplate(id: "daily-goal", title: "Daily Goal", subtitle: "Track progress toward a target", name: "Daily Goal", group: "Today", goal: 10, symbol: "checkmark.circle.fill", color: .green, notes: "Resets manually for now.", stepValues: [1, 2, 5]),
+        CounterTemplate(id: "water", title: "Water", subtitle: "Daily glasses or bottles", name: "Water", group: "Today", goal: 8, symbol: "drop.fill", color: .blue, notes: "Daily hydration", stepValues: [1, 2, 4]),
+        CounterTemplate(id: "workout", title: "Workout Reps", subtitle: "Sets, reps, or exercises", name: "Workout Reps", group: "Fitness", goal: 100, symbol: "figure.strengthtraining.traditional", color: .green, notes: "", stepValues: [1, 10, 25]),
+        CounterTemplate(id: "inventory", title: "Inventory", subtitle: "Stock or item tracking", name: "Inventory", group: "Inventory", goal: nil, symbol: "shippingbox.fill", color: .orange, notes: "Use + and − to adjust stock.", stepValues: [1, 5, 20]),
+        CounterTemplate(id: "score", title: "Game Score", subtitle: "Simple score counter", name: "Player Score", group: "Games", goal: nil, symbol: "gamecontroller.fill", color: .purple, notes: "", stepValues: [1, 2, 3]),
+        CounterTemplate(id: "reading", title: "Reading", subtitle: "Pages, chapters, or sessions", name: "Reading", group: "Focus", goal: 50, symbol: "book.fill", color: .purple, notes: "", stepValues: [1, 5, 10]),
+        CounterTemplate(id: "streak", title: "Streak", subtitle: "Count days or wins", name: "Streak", group: "Habits", goal: nil, symbol: "flame.fill", color: .red, notes: "", stepValues: [1, 7, 30]),
+        CounterTemplate(id: "shopping", title: "Shopping List", subtitle: "Items collected or packed", name: "Items", group: "Shopping", goal: nil, symbol: "cart.fill", color: .teal, notes: "", stepValues: [1, 5, 10])
     ]
 }
 
 struct TallyBackup: Codable {
-    var version: String = "1.2"
+    var version: String = "1.3"
     var exportedAt: Date = Date()
     var counters: [TallyCounter]
     var history: [TallyHistoryEntry]
     var theme: TallyTheme
+}
+
+struct TallyBackupPreview: Identifiable {
+    let id = UUID()
+    let url: URL
+    let version: String
+    let exportedAt: Date
+    let counterCount: Int
+    let activeCounterCount: Int
+    let archivedCounterCount: Int
+    let historyCount: Int
+    let themeTitle: String
 }
