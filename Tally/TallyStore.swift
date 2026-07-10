@@ -5,6 +5,7 @@ import SwiftUI
 final class TallyStore: ObservableObject {
     @Published var counters: [TallyCounter] = [] { didSet { save() } }
     @Published var history: [TallyHistoryEntry] = [] { didSet { save() } }
+    @Published var sessions: [TallySession] = [] { didSet { save() } }
     @Published var theme: TallyTheme = .system { didSet { save() } }
 
     private let storageKey = "tally.state.v1"
@@ -27,6 +28,14 @@ final class TallyStore: ObservableObject {
         counters.filter { $0.isArchived }
     }
 
+    var activeSessions: [TallySession] {
+        sessions.filter(\.isActive).sorted { $0.startedAt > $1.startedAt }
+    }
+
+    var finishedSessions: [TallySession] {
+        sessions.filter { !$0.isActive }.sorted { $0.startedAt > $1.startedAt }
+    }
+
     var groups: [String] {
         groups(for: activeCounters)
     }
@@ -40,10 +49,10 @@ final class TallyStore: ObservableObject {
     }
 
     @discardableResult
-    func addCounter(name: String, group: String, goal: Int?, symbol: String, color: CounterColor, notes: String, stepValues: [Int] = [1, 5, 10]) -> TallyCounter? {
+    func addCounter(name: String, group: String, goal: Int?, symbol: String, color: CounterColor, notes: String, stepValues: [Int] = [1, 5, 10], resetReminder: ResetReminder = .none) -> TallyCounter? {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty else { return nil }
-        let counter = TallyCounter(name: cleanName, value: 0, goal: goal, group: group, symbol: symbol, colorName: color.rawValue, notes: notes, stepValues: stepValues)
+        let counter = TallyCounter(name: cleanName, value: 0, goal: goal, group: group, symbol: symbol, colorName: color.rawValue, notes: notes, stepValues: stepValues, resetReminder: resetReminder)
         counters.insert(counter, at: 0)
         return counter
     }
@@ -67,6 +76,7 @@ final class TallyStore: ObservableObject {
     func permanentlyDeleteCounter(_ counter: TallyCounter) {
         counters.removeAll { $0.id == counter.id }
         history.removeAll { $0.counterID == counter.id }
+        sessions.removeAll { $0.counterID == counter.id }
     }
 
     func updateCounter(_ counter: TallyCounter) {
@@ -125,8 +135,45 @@ final class TallyStore: ObservableObject {
         history.removeAll()
     }
 
+    @discardableResult
+    func startSession(counterID: UUID?, title: String, notes: String) -> TallySession {
+        let counter = counterID.flatMap { id in counters.first { $0.id == id } }
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let session = TallySession(
+            title: cleanTitle.isEmpty ? (counter?.name ?? "Counting Session") : cleanTitle,
+            counterID: counter?.id,
+            counterName: counter?.name ?? "Standalone",
+            startedAt: Date(),
+            endedAt: nil,
+            startValue: counter?.value ?? 0,
+            endValue: nil,
+            notes: notes
+        )
+        sessions.insert(session, at: 0)
+        return session
+    }
+
+    func endSession(_ session: TallySession) {
+        guard let index = sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        let counterValue = sessions[index].counterID.flatMap { id in counters.first(where: { $0.id == id })?.value }
+        sessions[index].endedAt = Date()
+        sessions[index].endValue = counterValue ?? sessions[index].startValue
+    }
+
+    func cancelSession(_ session: TallySession) {
+        sessions.removeAll { $0.id == session.id && $0.isActive }
+    }
+
+    func deleteSession(_ session: TallySession) {
+        sessions.removeAll { $0.id == session.id }
+    }
+
+    func activeSession(for counter: TallyCounter) -> TallySession? {
+        activeSessions.first { $0.counterID == counter.id }
+    }
+
     func exportJSONURL() -> URL? {
-        let backup = TallyBackup(version: "1.3", counters: counters, history: history, theme: theme)
+        let backup = TallyBackup(version: "1.4", counters: counters, history: history, theme: theme, sessions: sessions)
         guard let data = try? encoder.encode(backup) else { return nil }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Backup_\(Self.timestamp()).json")
         do {
@@ -159,6 +206,31 @@ final class TallyStore: ObservableObject {
         }
     }
 
+    func exportSessionsCSVURL() -> URL? {
+        var rows = ["Title,Counter,Started,Ended,DurationSeconds,StartValue,EndValue,Delta,Notes"]
+        let formatter = ISO8601DateFormatter()
+        for session in sessions.reversed() {
+            rows.append([
+                session.title,
+                session.counterName,
+                formatter.string(from: session.startedAt),
+                session.endedAt.map { formatter.string(from: $0) } ?? "",
+                String(Int(session.duration)),
+                String(session.startValue),
+                session.endValue.map(String.init) ?? "",
+                session.delta.map(String.init) ?? "",
+                session.notes
+            ].map(Self.csvEscape).joined(separator: ","))
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Sessions_\(Self.timestamp()).csv")
+        do {
+            try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
     func previewBackup(from url: URL) throws -> TallyBackupPreview {
         let data = try Data(contentsOf: url)
         let backup = try decoder.decode(TallyBackup.self, from: data)
@@ -170,6 +242,7 @@ final class TallyStore: ObservableObject {
             activeCounterCount: backup.counters.filter { !$0.isArchived }.count,
             archivedCounterCount: backup.counters.filter { $0.isArchived }.count,
             historyCount: backup.history.count,
+            sessionCount: backup.sessions.count,
             themeTitle: backup.theme.title
         )
     }
@@ -186,20 +259,20 @@ final class TallyStore: ObservableObject {
         let backup = try decoder.decode(TallyBackup.self, from: data)
 
         if replaceExisting {
-            counters = backup.counters
+            counters = backup.counters.map(normalizedCounter)
             history = backup.history
+            sessions = backup.sessions
             theme = backup.theme
         } else {
             var idMap: [UUID: UUID] = [:]
             var importedCounters = backup.counters.map { counter in
-                var imported = counter
+                var imported = normalizedCounter(counter)
                 let newID = UUID()
                 idMap[counter.id] = newID
                 imported.id = newID
                 imported.createdAt = Date()
                 imported.updatedAt = Date()
                 imported.name = uniqueImportedName(for: imported.name)
-                imported.stepValues = TallyCounter.sanitizedStepValues(imported.stepValues)
                 return imported
             }
 
@@ -216,13 +289,23 @@ final class TallyStore: ObservableObject {
                 return imported
             }
 
+            let importedSessions = backup.sessions.map { session in
+                var imported = session
+                imported.id = UUID()
+                if let oldCounterID = session.counterID {
+                    imported.counterID = idMap[oldCounterID]
+                }
+                return imported
+            }
+
             counters.insert(contentsOf: importedCounters, at: 0)
             history.insert(contentsOf: importedHistory, at: 0)
+            sessions.insert(contentsOf: importedSessions, at: 0)
         }
     }
 
     private func save() {
-        let backup = TallyBackup(version: "1.3", counters: counters, history: history, theme: theme)
+        let backup = TallyBackup(version: "1.4", counters: counters, history: history, theme: theme, sessions: sessions)
         guard let data = try? encoder.encode(backup) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
     }
@@ -230,13 +313,16 @@ final class TallyStore: ObservableObject {
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let backup = try? decoder.decode(TallyBackup.self, from: data) else { return }
-        counters = backup.counters.map { counter in
-            var normalized = counter
-            normalized.stepValues = TallyCounter.sanitizedStepValues(counter.stepValues)
-            return normalized
-        }
+        counters = backup.counters.map(normalizedCounter)
         history = backup.history
+        sessions = backup.sessions
         theme = backup.theme
+    }
+
+    private func normalizedCounter(_ counter: TallyCounter) -> TallyCounter {
+        var normalized = counter
+        normalized.stepValues = TallyCounter.sanitizedStepValues(counter.stepValues)
+        return normalized
     }
 
     private func uniqueCopyName(for baseName: String) -> String {
@@ -274,8 +360,8 @@ final class TallyStore: ObservableObject {
     }
 
     static let sampleCounters: [TallyCounter] = [
-        TallyCounter(name: "Water", value: 3, goal: 8, group: "Today", symbol: "drop.fill", colorName: CounterColor.blue.rawValue, notes: "Daily glasses", stepValues: [1, 2, 4]),
-        TallyCounter(name: "Push-ups", value: 25, goal: 100, group: "Fitness", symbol: "figure.strengthtraining.traditional", colorName: CounterColor.green.rawValue, notes: "", stepValues: [1, 10, 25]),
-        TallyCounter(name: "Study reps", value: 12, goal: nil, group: "Focus", symbol: "book.fill", colorName: CounterColor.purple.rawValue, notes: "", stepValues: [1, 5, 10])
+        TallyCounter(name: "Water", value: 3, goal: 8, group: "Today", symbol: "drop.fill", colorName: CounterColor.blue.rawValue, notes: "Daily glasses", stepValues: [1, 2, 4], resetReminder: .daily),
+        TallyCounter(name: "Push-ups", value: 25, goal: 100, group: "Fitness", symbol: "figure.strengthtraining.traditional", colorName: CounterColor.green.rawValue, notes: "", stepValues: [1, 10, 25], resetReminder: .weekly),
+        TallyCounter(name: "Study reps", value: 12, goal: nil, group: "Focus", symbol: "book.fill", colorName: CounterColor.purple.rawValue, notes: "", stepValues: [1, 5, 10], resetReminder: .none)
     ]
 }
