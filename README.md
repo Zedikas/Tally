@@ -2,11 +2,24 @@
 
 **Tally** is a clean, native SwiftUI multi-counter app for iPhone.
 
-It is designed as a polished but reliable app: multiple counters, groups, history, stats, export/import, themes, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target for now so it can build and sideload more reliably than the extension-heavy Universal Downloader experiments.
+It is designed as a polished but reliable app: multiple counters, groups, history, stats, safer counter management, export/import, themes, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target for now so it can build and sideload more reliably than the extension-heavy Universal Downloader experiments.
 
 ## Repository description
 
-A polished SwiftUI multi-counter app for iPhone with grouped counters, goals, stats, history, export/import, OLED mode, and interchangeable icons.
+A polished SwiftUI multi-counter app for iPhone with grouped counters, goals, stats, archive-safe counter management, export/import, OLED mode, and interchangeable icons.
+
+## v1.3 features
+
+- Archive counters instead of hard deleting from the main counter screen
+- Archive manager in Settings
+- Restore archived counters
+- Permanently delete archived counters when needed
+- Per-counter custom step buttons
+- Counter templates now include useful step presets
+- Backup import preview before merge or replace
+- Preview shows backup version, export date, active counters, archived counters, history count, and theme
+- Backward-compatible counter decoding for older backups without archive or custom-step fields
+- Version bump to v1.3 build 4
 
 ## v1.2 features
 
@@ -18,7 +31,6 @@ A polished SwiftUI multi-counter app for iPhone with grouped counters, goals, st
 - Streak insights based on consecutive days with positive counter activity
 - History search improvements
 - History filters: All, Today, Last 7 Days, Positive, Negative, and Resets
-- Version bump to v1.2 build 3
 
 ## v1.1 features
 
@@ -97,7 +109,7 @@ The workflow builds an unsigned IPA when run manually or when the latest commit 
 The artifact name is:
 
 ```text
-Tally_v1_2_unsigned_ipa
+Tally_v1_3_unsigned_ipa
 ```
 
 ## Icon system
