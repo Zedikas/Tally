@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.3 build 4 final trigger.
+# Tally v1.3 build 4 final trigger after archive/custom-step polishing.
 
 on:
   workflow_dispatch:
