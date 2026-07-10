@@ -28,11 +28,21 @@ Delivered:
 
 ## v1.3
 
-- Import preview before replacing data
-- More detailed history analytics
+Delivered:
+
+- Import preview before merge or replace
 - Counter archive instead of hard delete
-- Optional counter-specific custom step values
-- Per-counter reset reminders without extensions
+- Archive manager with restore and permanent delete
+- Counter-specific custom step values
+- Backward-compatible data migration for old backups
+
+## v1.4
+
+- More detailed history analytics
+- Counter archive search and filters
+- Optional reset reminders without extensions
+- Per-counter notes expansion and pinned counters
+- More counter layout options
 
 ## v2.0
 
