@@ -22,6 +22,109 @@ enum TallyAccentColor: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - True-color selectors
+
+struct CounterColorSelector: View {
+    @Binding var selection: CounterColor
+    @State private var showingChoices = false
+
+    var body: some View {
+        Button { showingChoices = true } label: {
+            HStack {
+                Text("Color").foregroundStyle(.primary)
+                Spacer()
+                Circle().fill(selection.color).frame(width: 18, height: 18)
+                Text(selection.title).foregroundStyle(selection.color)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(selection.color)
+            }
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showingChoices, arrowEdge: .trailing) {
+            ColorChoiceList(title: "Counter Color") {
+                ForEach(CounterColor.allCases) { option in
+                    colorChoice(title: option.title, color: option.color, selected: option == selection) {
+                        selection = option
+                        showingChoices = false
+                    }
+                }
+            }
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+struct AccentColorSelector: View {
+    @Binding var selection: TallyAccentColor
+    @State private var showingChoices = false
+
+    var body: some View {
+        Button { showingChoices = true } label: {
+            HStack {
+                Text("Accent Color").foregroundStyle(.primary)
+                Spacer()
+                Circle().fill(selection.color).frame(width: 18, height: 18)
+                Text(selection.title).foregroundStyle(selection.color)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(selection.color)
+            }
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showingChoices, arrowEdge: .trailing) {
+            ColorChoiceList(title: "Accent Color") {
+                ForEach(TallyAccentColor.allCases) { option in
+                    colorChoice(title: option.title, color: option.color, selected: option == selection) {
+                        selection = option
+                        showingChoices = false
+                    }
+                }
+            }
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+private struct ColorChoiceList<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.headline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            Divider()
+            ScrollView {
+                VStack(spacing: 0) { content }
+            }
+        }
+        .frame(width: 260, height: 390)
+        .background(.regularMaterial)
+    }
+}
+
+@ViewBuilder
+private func colorChoice(title: String, color: Color, selected: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        HStack(spacing: 12) {
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle.fill")
+                .foregroundStyle(color)
+                .font(.title3)
+            Text(title)
+                .foregroundStyle(color)
+                .font(.body.weight(selected ? .bold : .regular))
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 46)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+}
+
 // MARK: - Human-readable symbols
 
 struct CounterSymbolOption: Identifiable, Hashable {
@@ -75,24 +178,13 @@ extension TallyStore {
         counters[index].value = newValue
         counters[index].updatedAt = Date()
         let delta = newValue - before
-        history.insert(
-            TallyHistoryEntry(
-                counterID: counter.id,
-                counterName: counters[index].name,
-                action: "Set to \(newValue)",
-                delta: delta,
-                beforeValue: before,
-                afterValue: newValue
-            ),
-            at: 0
-        )
+        history.insert(TallyHistoryEntry(counterID: counter.id, counterName: counters[index].name, action: "Set to \(newValue)", delta: delta, beforeValue: before, afterValue: newValue), at: 0)
     }
 }
 
 struct ExactValueEditor: View {
     @EnvironmentObject private var store: TallyStore
     @Environment(\.dismiss) private var dismiss
-
     let counter: TallyCounter
     @State private var valueText: String
 
@@ -117,9 +209,7 @@ struct ExactValueEditor: View {
             .navigationTitle(counter.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Set") {
                         guard let value = Int(valueText.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
