@@ -6,12 +6,20 @@ import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject private var store: TallyStore
+    @AppStorage("tally.accentColor") private var accentColorRaw = TallyAccentColor.blue.rawValue
     @State private var exportURL: URL?
     @State private var showingChangelog = false
     @State private var iconMessage: String?
     @State private var showingImporter = false
     @State private var importMessage: String?
     @State private var importPreview: TallyBackupPreview?
+
+    private var accentBinding: Binding<TallyAccentColor> {
+        Binding(
+            get: { TallyAccentColor(rawValue: accentColorRaw) ?? .blue },
+            set: { accentColorRaw = $0.rawValue }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -22,6 +30,17 @@ struct SettingsView: View {
                             Text(theme.title).tag(theme)
                         }
                     }
+                    Picker("Accent Color", selection: accentBinding) {
+                        ForEach(TallyAccentColor.allCases) { accent in
+                            Label {
+                                Text(accent.title).foregroundStyle(accent.color)
+                            } icon: {
+                                Image(systemName: "circle.fill").foregroundStyle(accent.color)
+                            }
+                            .tag(accent)
+                        }
+                    }
+                    .tint(accentBinding.wrappedValue.color)
                 }
 
                 Section("App Icons") {
@@ -67,24 +86,17 @@ struct SettingsView: View {
                             Label("Share Latest Export", systemImage: "square.and.arrow.up")
                         }
                     }
-
                     Divider()
-
-                    Button {
-                        showingImporter = true
-                    } label: {
+                    Button { showingImporter = true } label: {
                         Label("Preview & Import JSON Backup", systemImage: "doc.text.magnifyingglass")
                     }
-
                     if let importMessage {
-                        Text(importMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text(importMessage).font(.caption).foregroundStyle(.secondary)
                     }
                 }
 
                 Section("About") {
-                    LabeledContent("Version", value: "1.4 build 5")
+                    LabeledContent("Version", value: "1.5 build 6")
                     Button("Changelog") { showingChangelog = true }
                 }
             }
@@ -128,11 +140,7 @@ struct SettingsView: View {
 
     private func copyImportFileToTemporaryLocation(_ url: URL) throws -> URL {
         let securityScoped = url.startAccessingSecurityScopedResource()
-        defer {
-            if securityScoped {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
+        defer { if securityScoped { url.stopAccessingSecurityScopedResource() } }
         let data = try Data(contentsOf: url)
         let localURL = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Import_\(UUID().uuidString).json")
         try data.write(to: localURL, options: .atomic)
@@ -145,11 +153,7 @@ struct SettingsView: View {
             return
         }
         UIApplication.shared.setAlternateIconName(icon.iconName) { error in
-            if let error {
-                iconMessage = error.localizedDescription
-            } else {
-                iconMessage = "Icon changed to \(icon.title)."
-            }
+            iconMessage = error?.localizedDescription ?? "Icon changed to \(icon.title)."
         }
     }
 }
@@ -180,9 +184,7 @@ struct ArchivedCounterRow: View {
     let counter: TallyCounter
     @State private var showingDeleteConfirmation = false
 
-    private var color: CounterColor {
-        CounterColor(rawValue: counter.colorName) ?? .gray
-    }
+    private var color: CounterColor { CounterColor(rawValue: counter.colorName) ?? .gray }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -191,19 +193,15 @@ struct ArchivedCounterRow: View {
                 .frame(width: 34, height: 34)
                 .background(color.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(counter.name)
-                    .font(.headline)
-                Text("\(counter.displayGroup) • value \(counter.value)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(counter.name).font(.headline)
+                Text("\(counter.displayGroup) • value \(counter.value)").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Menu {
                 Button("Restore") { store.restoreCounter(counter) }
                 Button("Delete Forever", role: .destructive) { showingDeleteConfirmation = true }
             } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.title3)
+                Image(systemName: "ellipsis.circle").font(.title3)
             }
         }
         .confirmationDialog("Delete \(counter.name) forever?", isPresented: $showingDeleteConfirmation) {
@@ -224,21 +222,17 @@ struct BackupImportPreviewView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Backup Preview")
-                            .font(.title2.weight(.heavy))
+                        Text("Backup Preview").font(.title2.weight(.heavy))
                         Text("Review this backup before choosing whether to merge it into Tally or replace current data.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
                 }
-
                 Section("Backup Details") {
                     LabeledContent("Version", value: preview.version)
                     LabeledContent("Exported", value: preview.exportedAt.formatted(date: .abbreviated, time: .shortened))
                     LabeledContent("Theme", value: preview.themeTitle)
                 }
-
                 Section("Contents") {
                     LabeledContent("Counters", value: "\(preview.counterCount)")
                     LabeledContent("Active", value: "\(preview.activeCounterCount)")
@@ -246,19 +240,11 @@ struct BackupImportPreviewView: View {
                     LabeledContent("History Entries", value: "\(preview.historyCount)")
                     LabeledContent("Sessions", value: "\(preview.sessionCount)")
                 }
-
                 Section {
-                    Button {
-                        onImport(false)
-                        dismiss()
-                    } label: {
+                    Button { onImport(false); dismiss() } label: {
                         Label("Merge Into Current Data", systemImage: "plus.square.on.square")
                     }
-
-                    Button(role: .destructive) {
-                        onImport(true)
-                        dismiss()
-                    } label: {
+                    Button(role: .destructive) { onImport(true); dismiss() } label: {
                         Label("Replace Current Data", systemImage: "arrow.triangle.2.circlepath")
                     }
                 } footer: {
@@ -267,11 +253,7 @@ struct BackupImportPreviewView: View {
             }
             .navigationTitle("Import")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
     }
 }
@@ -304,56 +286,32 @@ struct ChangelogView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Tally v1.4")
-                            .font(.title2.weight(.heavy))
-                        Text("A sessions update with timed counting blocks, session exports, and lightweight reset reminder notes.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        Text("Tally v1.5").font(.title2.weight(.heavy))
+                        Text("A usability update with exact value entry, collapsible folders, clearer menus, and global accent colors.")
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
                 }
-
+                Section("v1.5") {
+                    ChangelogRow(title: "Exact Value Entry", detail: "Tap a counter's large number to enter any whole number with the numeric keyboard.")
+                    ChangelogRow(title: "Collapsible Folders", detail: "Counter groups now behave as folders and remember whether they are expanded or collapsed.")
+                    ChangelogRow(title: "Reminder Icons", detail: "Daily, weekly, and monthly reminders now use clear 1, 7, and 30 icons.")
+                    ChangelogRow(title: "Color Menu", detail: "Color names and indicators are tinted in their actual colors.")
+                    ChangelogRow(title: "Readable Symbols", detail: "Symbol menus use names like Water, Workout, Reading, and Inventory instead of SF Symbol identifiers.")
+                    ChangelogRow(title: "Accent Colors", detail: "Choose a global app accent color from Settings, matching Universal Downloader's customization.")
+                }
                 Section("v1.4") {
                     ChangelogRow(title: "Sessions Tab", detail: "Start timed counting sessions linked to a counter or as standalone sessions.")
                     ChangelogRow(title: "Session Summaries", detail: "Ending a session records duration, start value, end value, and delta.")
                     ChangelogRow(title: "Counter Session Actions", detail: "Start or end a linked session directly from a counter card menu.")
                     ChangelogRow(title: "Session Export", detail: "Export sessions as CSV from Settings.")
-                    ChangelogRow(title: "Reset Reminder Notes", detail: "Counters can now carry daily, weekly, or monthly reset reminder metadata without notification extensions.")
-                    ChangelogRow(title: "Backup Sessions", detail: "JSON backups now include sessions and import previews show session counts.")
+                    ChangelogRow(title: "Reset Reminder Notes", detail: "Counters can carry daily, weekly, or monthly reset reminder metadata without notification extensions.")
                 }
-
-                Section("v1.3") {
-                    ChangelogRow(title: "Archive Instead of Delete", detail: "The main counter screen now archives counters instead of permanently deleting them.")
-                    ChangelogRow(title: "Archive Manager", detail: "Restore archived counters or permanently delete them from Settings.")
-                    ChangelogRow(title: "Custom Step Buttons", detail: "Each counter can now define its own three positive step buttons.")
-                    ChangelogRow(title: "Import Preview", detail: "Backup imports now show version, export date, counter counts, archive counts, and history count before merge or replace.")
-                    ChangelogRow(title: "Safer Data Migration", detail: "Older backups load with default archive and step settings so existing data is preserved.")
-                }
-
-                Section("v1.2") {
-                    ChangelogRow(title: "Stats Tab", detail: "Adds a dedicated dashboard with selected ranges for Today, 7 days, 30 days, and all time.")
-                    ChangelogRow(title: "Daily / Weekly Summaries", detail: "Shows changes, net movement, active counters, goal completion, and day-by-day activity.")
-                    ChangelogRow(title: "Streak Insights", detail: "Detects consecutive days with positive activity for counters based on history.")
-                    ChangelogRow(title: "Top Counters", detail: "Ranks counters by activity and net change for the selected stats range.")
-                    ChangelogRow(title: "History Filters", detail: "Filter history by Today, Last 7 Days, Positive, Negative, and Resets.")
-                }
-
-                Section("v1.1") {
-                    ChangelogRow(title: "Search", detail: "Search counters by name, group, or notes directly from the Counters tab.")
-                    ChangelogRow(title: "Sorting", detail: "Sort counters manually, by recent update, by name, or by value.")
-                    ChangelogRow(title: "Templates", detail: "Create new counters from presets like Daily Goal, Water, Workout Reps, Inventory, Game Score, Reading, Streak, and Shopping.")
-                    ChangelogRow(title: "Counter Actions", detail: "Duplicate counters and move them up or down from the card menu.")
-                    ChangelogRow(title: "Backup Import", detail: "Import a JSON backup by merging it into your current counters or replacing all local data.")
-                }
-
-                Section("v1.0") {
-                    ChangelogRow(title: "Multiple Counters", detail: "Create counters with names, groups, goals, notes, symbols, and colors.")
-                    ChangelogRow(title: "Fast Counting", detail: "Use -1, +1, +5, +10, +100, reset, and undo.")
-                    ChangelogRow(title: "Groups", detail: "Counters are automatically grouped into clean sections.")
-                    ChangelogRow(title: "History", detail: "Every change is logged with before/after values and timestamps.")
-                    ChangelogRow(title: "Backup & Export", detail: "Export a JSON backup or CSV history file with ShareLink.")
-                    ChangelogRow(title: "Appearance", detail: "System, light, dark, and OLED black themes are included.")
-                    ChangelogRow(title: "Alternate Icons", detail: "Includes the full interchangeable icon family inspired by the Universal Downloader icon setup.")
+                Section("Earlier Releases") {
+                    ChangelogRow(title: "v1.3", detail: "Archive management, custom step buttons, and import previews.")
+                    ChangelogRow(title: "v1.2", detail: "Stats dashboard, summaries, streaks, and history filters.")
+                    ChangelogRow(title: "v1.1", detail: "Search, sorting, templates, duplication, movement, and JSON import.")
+                    ChangelogRow(title: "v1.0", detail: "Multiple counters, groups, goals, history, exports, themes, and alternate icons.")
                 }
             }
             .navigationTitle("Changelog")
