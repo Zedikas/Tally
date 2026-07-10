@@ -7,6 +7,8 @@ struct RootView: View {
         TabView {
             CountersView()
                 .tabItem { Label("Counters", systemImage: "number.circle.fill") }
+            SessionsView()
+                .tabItem { Label("Sessions", systemImage: "timer") }
             StatsView()
                 .tabItem { Label("Stats", systemImage: "chart.bar.xaxis") }
             HistoryView()
@@ -142,7 +144,7 @@ struct CountersView: View {
     private var quickStats: some View {
         HStack(spacing: 12) {
             StatPill(title: "Active", value: "\(store.activeCounters.count)", systemImage: "number")
-            StatPill(title: "Archived", value: "\(store.archivedCounters.count)", systemImage: "archivebox")
+            StatPill(title: "Sessions", value: "\(store.activeSessions.count)", systemImage: "timer")
             StatPill(title: "Total", value: "\(visibleCounters.map(\.value).reduce(0,+))", systemImage: "sum")
         }
         .padding(.horizontal)
@@ -198,6 +200,17 @@ struct CounterCard: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
+
+                    HStack(spacing: 6) {
+                        if counter.resetReminder != .none {
+                            Label(counter.resetReminder.title, systemImage: counter.resetReminder.systemImage)
+                        }
+                        if store.activeSession(for: counter) != nil {
+                            Label("Session", systemImage: "timer")
+                        }
+                    }
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text("\(counter.value)")
@@ -220,6 +233,11 @@ struct CounterCard: View {
                 Menu {
                     Button("+100") { store.adjust(counter, by: 100) }
                     Divider()
+                    if let activeSession = store.activeSession(for: counter) {
+                        Button("End Session") { store.endSession(activeSession) }
+                    } else {
+                        Button("Start Session") { store.startSession(counterID: counter.id, title: counter.name, notes: "") }
+                    }
                     Button("Duplicate") { store.duplicateCounter(counter) }
                     Button("Move Up") { store.moveCounter(counter, by: -1) }
                     Button("Move Down") { store.moveCounter(counter, by: 1) }
