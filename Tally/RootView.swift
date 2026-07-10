@@ -20,6 +20,8 @@ struct RootView: View {
 struct CountersView: View {
     @EnvironmentObject private var store: TallyStore
     @State private var showingAdd = false
+    @State private var searchText = ""
+    @State private var sort: CounterSort = .manual
 
     var body: some View {
         NavigationStack {
@@ -28,14 +30,33 @@ struct CountersView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         quickStats
-                        ForEach(store.groups, id: \.self) { group in
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(group)
-                                    .font(.headline.weight(.heavy))
+                        if visibleCounters.isEmpty {
+                            ContentUnavailableView(
+                                searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No Counters" : "No Matches",
+                                systemImage: "magnifyingglass",
+                                description: Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Create a counter to get started." : "Try a different name, group, or note.")
+                            )
+                            .padding(.top, 40)
+                        } else {
+                            ForEach(visibleGroups, id: \.self) { group in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack {
+                                        Text(group)
+                                            .font(.headline.weight(.heavy))
+                                        Spacer()
+                                        Text("\(counters(in: group).count)")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 9)
+                                            .padding(.vertical, 5)
+                                            .background(.thinMaterial, in: Capsule())
+                                    }
                                     .padding(.horizontal)
-                                ForEach(store.counters(in: group)) { counter in
-                                    CounterCard(counter: counter)
-                                        .padding(.horizontal)
+
+                                    ForEach(counters(in: group)) { counter in
+                                        CounterCard(counter: counter)
+                                            .padding(.horizontal)
+                                    }
                                 }
                             }
                         }
@@ -44,6 +65,7 @@ struct CountersView: View {
                 }
             }
             .navigationTitle("Tally")
+            .searchable(text: $searchText, prompt: "Search counters")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { store.undoLastAction() } label: {
@@ -51,7 +73,17 @@ struct CountersView: View {
                     }
                     .disabled(store.history.isEmpty)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Sort", selection: $sort) {
+                            ForEach(CounterSort.allCases) { option in
+                                Label(option.title, systemImage: option.systemImage).tag(option)
+                            }
+                        }
+                    } label: {
+                        Label("Sort", systemImage: "arrow.up.arrow.down.circle")
+                    }
+
                     Button { showingAdd = true } label: {
                         Label("New", systemImage: "plus.circle.fill")
                     }
@@ -59,6 +91,39 @@ struct CountersView: View {
             }
             .sheet(isPresented: $showingAdd) { CounterEditorView(mode: .add) }
         }
+    }
+
+    private var visibleCounters: [TallyCounter] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filtered: [TallyCounter]
+        if trimmed.isEmpty {
+            filtered = store.counters
+        } else {
+            filtered = store.counters.filter { counter in
+                counter.name.localizedCaseInsensitiveContains(trimmed) ||
+                counter.displayGroup.localizedCaseInsensitiveContains(trimmed) ||
+                counter.notes.localizedCaseInsensitiveContains(trimmed)
+            }
+        }
+
+        switch sort {
+        case .manual:
+            return filtered
+        case .recent:
+            return filtered.sorted { $0.updatedAt > $1.updatedAt }
+        case .name:
+            return filtered.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .value:
+            return filtered.sorted { $0.value > $1.value }
+        }
+    }
+
+    private var visibleGroups: [String] {
+        store.groups(for: visibleCounters)
+    }
+
+    private func counters(in group: String) -> [TallyCounter] {
+        visibleCounters.filter { $0.displayGroup == group }
     }
 
     private var background: some View {
@@ -75,8 +140,8 @@ struct CountersView: View {
     private var quickStats: some View {
         HStack(spacing: 12) {
             StatPill(title: "Counters", value: "\(store.counters.count)", systemImage: "number")
-            StatPill(title: "Today", value: "\(store.history.filter { Calendar.current.isDateInToday($0.date) }.count)", systemImage: "calendar")
-            StatPill(title: "Total", value: "\(store.counters.map(\.value).reduce(0,+))", systemImage: "sum")
+            StatPill(title: "Shown", value: "\(visibleCounters.count)", systemImage: "line.3.horizontal.decrease.circle")
+            StatPill(title: "Total", value: "\(visibleCounters.map(\.value).reduce(0,+))", systemImage: "sum")
         }
         .padding(.horizontal)
     }
@@ -151,6 +216,11 @@ struct CounterCard: View {
                 StepButton(title: "+10") { store.adjust(counter, by: 10) }
                 Menu {
                     Button("+100") { store.adjust(counter, by: 100) }
+                    Divider()
+                    Button("Duplicate") { store.duplicateCounter(counter) }
+                    Button("Move Up") { store.moveCounter(counter, by: -1) }
+                    Button("Move Down") { store.moveCounter(counter, by: 1) }
+                    Divider()
                     Button("Reset", role: .destructive) { showingResetConfirmation = true }
                     Button("Edit") { showingEdit = true }
                     Button("Delete", role: .destructive) { store.deleteCounter(counter) }
