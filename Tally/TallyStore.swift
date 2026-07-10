@@ -100,7 +100,7 @@ final class TallyStore: ObservableObject {
     }
 
     func exportJSONURL() -> URL? {
-        let backup = TallyBackup(version: "1.1", counters: counters, history: history, theme: theme)
+        let backup = TallyBackup(version: "1.2", counters: counters, history: history, theme: theme)
         guard let data = try? encoder.encode(backup) else { return nil }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Backup_\(Self.timestamp()).json")
         do {
@@ -180,7 +180,7 @@ final class TallyStore: ObservableObject {
     }
 
     private func save() {
-        let backup = TallyBackup(version: "1.1", counters: counters, history: history, theme: theme)
+        let backup = TallyBackup(version: "1.2", counters: counters, history: history, theme: theme)
         guard let data = try? encoder.encode(backup) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
     }
