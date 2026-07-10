@@ -45,6 +45,7 @@ jobs:
           test -f Tally/Resources/AlternateIcons/TallyIconClassicBlue@2x.png
           test -f Tally/Resources/AlternateIcons/TallyIconClassicBlue@3x.png
           ls -lh Tally/Resources/AlternateIcons
+          echo "Tally icon assets verified"
 
       - name: Generate Xcode project
         run: |
