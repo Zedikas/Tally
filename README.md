@@ -2,11 +2,25 @@
 
 **Tally** is a clean, native SwiftUI multi-counter app for iPhone.
 
-It is designed as a polished but reliable app: multiple counters, groups, history, stats, safer counter management, export/import, themes, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target for now so it can build and sideload more reliably than the extension-heavy Universal Downloader experiments.
+It is designed as a polished but reliable app: multiple counters, sessions, groups, history, stats, safer counter management, export/import, themes, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target for now so it can build and sideload more reliably than the extension-heavy Universal Downloader experiments.
 
 ## Repository description
 
-A polished SwiftUI multi-counter app for iPhone with grouped counters, goals, stats, archive-safe counter management, export/import, OLED mode, and interchangeable icons.
+A polished SwiftUI multi-counter app for iPhone with timed sessions, grouped counters, goals, stats, archive-safe counter management, export/import, OLED mode, and interchangeable icons.
+
+## v1.4 features
+
+- New Sessions tab
+- Start timed sessions linked to a counter or as standalone sessions
+- Active session timers update while the Sessions screen is open
+- End sessions with duration, start value, end value, and delta summaries
+- Start or end a linked session directly from a counter card menu
+- Export sessions as CSV
+- JSON backups now include sessions
+- Import preview now shows session counts
+- Per-counter reset reminder metadata: none, daily, weekly, or monthly
+- Reset reminder badges on counter cards
+- Version bump to v1.4 build 5
 
 ## v1.3 features
 
@@ -19,7 +33,6 @@ A polished SwiftUI multi-counter app for iPhone with grouped counters, goals, st
 - Backup import preview before merge or replace
 - Preview shows backup version, export date, active counters, archived counters, history count, and theme
 - Backward-compatible counter decoding for older backups without archive or custom-step fields
-- Version bump to v1.3 build 4
 
 ## v1.2 features
 
@@ -109,7 +122,7 @@ The workflow builds an unsigned IPA when run manually or when the latest commit 
 The artifact name is:
 
 ```text
-Tally_v1_3_unsigned_ipa
+Tally_v1_4_unsigned_ipa
 ```
 
 ## Icon system
