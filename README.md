@@ -2,11 +2,25 @@
 
 **Tally** is a clean, native SwiftUI multi-counter app for iPhone.
 
-It is designed as a polished but reliable app: multiple counters, sessions, groups, history, stats, safer counter management, export/import, themes, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target for now so it can build and sideload more reliably than the extension-heavy Universal Downloader experiments.
+It is designed as a polished but reliable app: multiple counters, sessions, collapsible folders, history, stats, safer counter management, export/import, themes, accent colors, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target so it can build and sideload reliably without extension signing files.
 
 ## Repository description
 
-A polished SwiftUI multi-counter app for iPhone with timed sessions, grouped counters, goals, stats, archive-safe counter management, export/import, OLED mode, and interchangeable icons.
+A polished SwiftUI multi-counter app for iPhone with timed sessions, collapsible folders, exact value entry, goals, stats, archive-safe management, export/import, OLED mode, accent colors, and interchangeable icons.
+
+## v1.5 features
+
+- Tap a counter’s large value to enter an exact whole number with the numeric keyboard
+- Exact value changes are recorded in History and support Undo
+- Counter groups now behave as collapsible folders
+- Folder expanded/collapsed state is remembered between launches
+- Expand All and Collapse All actions
+- Clear reminder icons: 1 for daily, 7 for weekly, and 30 for monthly
+- Color-picker icons and names are tinted using their actual colors
+- Human-readable symbol names instead of raw SF Symbol identifiers
+- Global accent-color setting inspired by Universal Downloader
+- Accent color applies to tab selection, buttons, pickers, and navigation controls
+- Version bump to v1.5 build 6
 
 ## v1.4 features
 
@@ -16,60 +30,15 @@ A polished SwiftUI multi-counter app for iPhone with timed sessions, grouped cou
 - End sessions with duration, start value, end value, and delta summaries
 - Start or end a linked session directly from a counter card menu
 - Export sessions as CSV
-- JSON backups now include sessions
-- Import preview now shows session counts
-- Per-counter reset reminder metadata: none, daily, weekly, or monthly
-- Reset reminder badges on counter cards
-- Version bump to v1.4 build 5
+- JSON backups include sessions
+- Per-counter reset reminder metadata
 
-## v1.3 features
+## Earlier releases
 
-- Archive counters instead of hard deleting from the main counter screen
-- Archive manager in Settings
-- Restore archived counters
-- Permanently delete archived counters when needed
-- Per-counter custom step buttons
-- Counter templates now include useful step presets
-- Backup import preview before merge or replace
-- Preview shows backup version, export date, active counters, archived counters, history count, and theme
-- Backward-compatible counter decoding for older backups without archive or custom-step fields
-
-## v1.2 features
-
-- New Stats tab
-- Stats ranges: Today, 7 days, 30 days, and all time
-- Daily summary cards
-- Top counters by selected activity range
-- Goal completion overview
-- Streak insights based on consecutive days with positive counter activity
-- History search improvements
-- History filters: All, Today, Last 7 Days, Positive, Negative, and Resets
-
-## v1.1 features
-
-- Counter search by name, group, and notes
-- Sort counters manually, by recent update, by name, or by value
-- Counter templates for common use cases
-- Duplicate counters
-- Move counters up/down from the card menu
-- Import JSON backups
-- Merge imported backups into existing data
-- Replace current data with an imported backup
-
-## v1.0 features
-
-- Multiple named counters
-- Counter groups/folders
-- Optional goals and progress bars
-- Fast actions: `-1`, `+1`, `+5`, `+10`, `+100`
-- Reset and undo
-- History timeline with before/after values
-- JSON backup export
-- CSV history export
-- Light, dark, system, and OLED black themes
-- Interchangeable icon family inspired by Universal Downloader
-- XcodeGen-based project setup
-- Unsigned IPA GitHub Actions workflow triggered by `(!F)`
+- **v1.3:** archive management, custom step buttons, and import previews
+- **v1.2:** stats dashboard, summaries, streaks, and history filters
+- **v1.1:** search, sorting, templates, duplication, movement, and JSON import
+- **v1.0:** multiple counters, groups, goals, history, exports, themes, and alternate icons
 
 ## Project structure
 
@@ -122,25 +91,13 @@ The workflow builds an unsigned IPA when run manually or when the latest commit 
 The artifact name is:
 
 ```text
-Tally_v1_4_unsigned_ipa
+Tally_v1_5_unsigned_ipa
 ```
 
 ## Icon system
 
-The repo includes a programmatic icon generator instead of committing large binary icon files. The generator creates:
-
-- Primary AppIcon assets
-- Classic Blue
-- Neon Dark
-- Glass
-- Pearl
-- Amber
-- Tech Green
-- Cosmic Purple
-- Synthwave
-
-All variants use the same simplified, meaningful symbol: a single handheld tally counter with a display and one press button.
+The repo includes a programmatic icon generator instead of committing large binary icon files. The generator creates the primary icon plus Classic Blue, Neon Dark, Glass, Pearl, Amber, Tech Green, Cosmic Purple, and Synthwave alternatives.
 
 ## Roadmap
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md). Future features should stay single-target until the core app is stable. Widgets, App Intents, Live Activities, and iCloud sync should come later only when signing is solved cleanly.
+See [`docs/ROADMAP.md`](docs/ROADMAP.md). Widgets, App Intents, Live Activities, Watch support, and other extension targets remain postponed until the required signing assets are available.
