@@ -2,11 +2,23 @@
 
 **Tally** is a clean, native SwiftUI multi-counter app for iPhone.
 
-It is designed as a polished but reliable app: multiple counters, groups, history, export/import, themes, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target for now so it can build and sideload more reliably than the extension-heavy Universal Downloader experiments.
+It is designed as a polished but reliable app: multiple counters, groups, history, stats, export/import, themes, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target for now so it can build and sideload more reliably than the extension-heavy Universal Downloader experiments.
 
 ## Repository description
 
-A polished SwiftUI multi-counter app for iPhone with grouped counters, goals, history, export/import, OLED mode, and interchangeable icons.
+A polished SwiftUI multi-counter app for iPhone with grouped counters, goals, stats, history, export/import, OLED mode, and interchangeable icons.
+
+## v1.2 features
+
+- New Stats tab
+- Stats ranges: Today, 7 days, 30 days, and all time
+- Daily summary cards
+- Top counters by selected activity range
+- Goal completion overview
+- Streak insights based on consecutive days with positive counter activity
+- History search improvements
+- History filters: All, Today, Last 7 Days, Positive, Negative, and Resets
+- Version bump to v1.2 build 3
 
 ## v1.1 features
 
@@ -18,7 +30,6 @@ A polished SwiftUI multi-counter app for iPhone with grouped counters, goals, hi
 - Import JSON backups
 - Merge imported backups into existing data
 - Replace current data with an imported backup
-- Version bump to v1.1 build 2
 
 ## v1.0 features
 
@@ -86,7 +97,7 @@ The workflow builds an unsigned IPA when run manually or when the latest commit 
 The artifact name is:
 
 ```text
-Tally_v1_1_unsigned_ipa
+Tally_v1_2_unsigned_ipa
 ```
 
 ## Icon system
