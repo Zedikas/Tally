@@ -23,6 +23,9 @@ struct CounterEditorView: View {
     @State private var symbol: String = "number.circle.fill"
     @State private var color: CounterColor = .blue
     @State private var notes: String = ""
+    @State private var stepOneText = "1"
+    @State private var stepTwoText = "5"
+    @State private var stepThreeText = "10"
 
     private let symbols = [
         "number.circle.fill", "checkmark.circle.fill", "drop.fill", "flame.fill", "bolt.fill",
@@ -71,6 +74,18 @@ struct CounterEditorView: View {
                     TextField("Notes", text: $notes, axis: .vertical)
                 }
 
+                Section("Step Buttons") {
+                    TextField("First step", text: $stepOneText)
+                        .keyboardType(.numberPad)
+                    TextField("Second step", text: $stepTwoText)
+                        .keyboardType(.numberPad)
+                    TextField("Third step", text: $stepThreeText)
+                        .keyboardType(.numberPad)
+                    Text("These become the three positive buttons on the counter card. The −1 button always stays available.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Style") {
                     Picker("Color", selection: $color) {
                         ForEach(CounterColor.allCases) { color in
@@ -111,6 +126,10 @@ struct CounterEditorView: View {
         return false
     }
 
+    private var stepValues: [Int] {
+        TallyCounter.sanitizedStepValues([stepOneText, stepTwoText, stepThreeText].compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) })
+    }
+
     private func populate() {
         guard case .edit(let counter) = mode else { return }
         name = counter.name
@@ -119,6 +138,7 @@ struct CounterEditorView: View {
         symbol = counter.symbol
         color = CounterColor(rawValue: counter.colorName) ?? .blue
         notes = counter.notes
+        applyStepValues(counter.stepValues)
     }
 
     private func apply(_ template: CounterTemplate) {
@@ -128,6 +148,14 @@ struct CounterEditorView: View {
         symbol = template.symbol
         color = template.color
         notes = template.notes
+        applyStepValues(template.stepValues)
+    }
+
+    private func applyStepValues(_ values: [Int]) {
+        let sanitized = TallyCounter.sanitizedStepValues(values)
+        stepOneText = String(sanitized[safe: 0] ?? 1)
+        stepTwoText = String(sanitized[safe: 1] ?? 5)
+        stepThreeText = String(sanitized[safe: 2] ?? 10)
     }
 
     private func templateMatchesCurrent(_ template: CounterTemplate) -> Bool {
@@ -135,14 +163,15 @@ struct CounterEditorView: View {
         group == template.group &&
         goalText == (template.goal.map(String.init) ?? "") &&
         symbol == template.symbol &&
-        color == template.color
+        color == template.color &&
+        stepValues == TallyCounter.sanitizedStepValues(template.stepValues)
     }
 
     private func save() {
         let goal = Int(goalText.trimmingCharacters(in: .whitespacesAndNewlines))
         switch mode {
         case .add:
-            store.addCounter(name: name, group: group, goal: goal, symbol: symbol, color: color, notes: notes)
+            store.addCounter(name: name, group: group, goal: goal, symbol: symbol, color: color, notes: notes, stepValues: stepValues)
         case .edit(var counter):
             counter.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             counter.group = group
@@ -150,8 +179,15 @@ struct CounterEditorView: View {
             counter.symbol = symbol
             counter.colorName = color.rawValue
             counter.notes = notes
+            counter.stepValues = stepValues
             store.updateCounter(counter)
         }
         dismiss()
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
