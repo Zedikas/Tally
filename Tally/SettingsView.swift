@@ -61,6 +61,7 @@ struct SettingsView: View {
                 Section("Backup & Import") {
                     Button("Create JSON Backup") { exportURL = store.exportJSONURL() }
                     Button("Export History CSV") { exportURL = store.exportCSVURL() }
+                    Button("Export Sessions CSV") { exportURL = store.exportSessionsCSVURL() }
                     if let exportURL {
                         ShareLink(item: exportURL) {
                             Label("Share Latest Export", systemImage: "square.and.arrow.up")
@@ -83,7 +84,7 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("Version", value: "1.3 build 4")
+                    LabeledContent("Version", value: "1.4 build 5")
                     Button("Changelog") { showingChangelog = true }
                 }
             }
@@ -166,7 +167,7 @@ struct ArchivedCountersView: View {
                         ArchivedCounterRow(counter: counter)
                     }
                 } footer: {
-                    Text("Permanent delete also removes that counter's history. Restore keeps all values and history.")
+                    Text("Permanent delete also removes that counter's history and sessions. Restore keeps all values, history, and sessions.")
                 }
             }
         }
@@ -208,7 +209,7 @@ struct ArchivedCounterRow: View {
         .confirmationDialog("Delete \(counter.name) forever?", isPresented: $showingDeleteConfirmation) {
             Button("Delete Forever", role: .destructive) { store.permanentlyDeleteCounter(counter) }
         } message: {
-            Text("This also removes its history and cannot be undone.")
+            Text("This also removes its history and sessions and cannot be undone.")
         }
     }
 }
@@ -243,6 +244,7 @@ struct BackupImportPreviewView: View {
                     LabeledContent("Active", value: "\(preview.activeCounterCount)")
                     LabeledContent("Archived", value: "\(preview.archivedCounterCount)")
                     LabeledContent("History Entries", value: "\(preview.historyCount)")
+                    LabeledContent("Sessions", value: "\(preview.sessionCount)")
                 }
 
                 Section {
@@ -260,7 +262,7 @@ struct BackupImportPreviewView: View {
                         Label("Replace Current Data", systemImage: "arrow.triangle.2.circlepath")
                     }
                 } footer: {
-                    Text("Merge creates new counter IDs to avoid collisions. Replace overwrites counters, history, theme, and archive state.")
+                    Text("Merge creates new counter IDs to avoid collisions. Replace overwrites counters, history, sessions, theme, and archive state.")
                 }
             }
             .navigationTitle("Import")
@@ -302,13 +304,22 @@ struct ChangelogView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Tally v1.3")
+                        Text("Tally v1.4")
                             .font(.title2.weight(.heavy))
-                        Text("A management and safety update with archive-first deletion, custom step buttons, and safer backup importing.")
+                        Text("A sessions update with timed counting blocks, session exports, and lightweight reset reminder notes.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
+                }
+
+                Section("v1.4") {
+                    ChangelogRow(title: "Sessions Tab", detail: "Start timed counting sessions linked to a counter or as standalone sessions.")
+                    ChangelogRow(title: "Session Summaries", detail: "Ending a session records duration, start value, end value, and delta.")
+                    ChangelogRow(title: "Counter Session Actions", detail: "Start or end a linked session directly from a counter card menu.")
+                    ChangelogRow(title: "Session Export", detail: "Export sessions as CSV from Settings.")
+                    ChangelogRow(title: "Reset Reminder Notes", detail: "Counters can now carry daily, weekly, or monthly reset reminder metadata without notification extensions.")
+                    ChangelogRow(title: "Backup Sessions", detail: "JSON backups now include sessions and import previews show session counts.")
                 }
 
                 Section("v1.3") {
