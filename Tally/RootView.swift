@@ -214,7 +214,7 @@ struct CounterCard: View {
 
             HStack(spacing: 8) {
                 StepButton(title: "−1") { store.adjust(counter, by: -1) }
-                ForEach(Array(counter.stepValues.enumerated()), id: \.offset) { _, step in
+                ForEach(counter.stepValues, id: \.self) { step in
                     StepButton(title: "+\(step)") { store.adjust(counter, by: step) }
                 }
                 Menu {
