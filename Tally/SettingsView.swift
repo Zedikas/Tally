@@ -80,7 +80,7 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("Version", value: "1.1 build 2")
+                    LabeledContent("Version", value: "1.2 build 3")
                     Button("Changelog") { showingChangelog = true }
                 }
             }
@@ -153,13 +153,21 @@ struct ChangelogView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Tally v1.1")
+                        Text("Tally v1.2")
                             .font(.title2.weight(.heavy))
-                        Text("A focused usability update for finding counters faster, creating counters from templates, organizing existing counters, and restoring backups.")
+                        Text("A stats-focused update with a new dashboard, daily summaries, streak insights, and more useful history filters.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
+                }
+
+                Section("v1.2") {
+                    ChangelogRow(title: "Stats Tab", detail: "Adds a dedicated dashboard with selected ranges for Today, 7 days, 30 days, and all time.")
+                    ChangelogRow(title: "Daily / Weekly Summaries", detail: "Shows changes, net movement, active counters, goal completion, and day-by-day activity.")
+                    ChangelogRow(title: "Streak Insights", detail: "Detects consecutive days with positive activity for counters based on history.")
+                    ChangelogRow(title: "Top Counters", detail: "Ranks counters by activity and net change for the selected stats range.")
+                    ChangelogRow(title: "History Filters", detail: "Filter history by Today, Last 7 Days, Positive, Negative, and Resets.")
                 }
 
                 Section("v1.1") {
