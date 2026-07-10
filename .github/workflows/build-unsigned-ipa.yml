@@ -81,8 +81,8 @@ jobs:
           ICON_SRC="Tally/Resources/Assets.xcassets/AppIcon.appiconset"
           ALT_ICON_SRC="Tally/Resources/AlternateIcons"
 
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0" "$APP_PATH/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.1" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 2" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 2" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tally" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Tally" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :UILaunchStoryboardName LaunchScreen" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :UILaunchStoryboardName string LaunchScreen" "$APP_PATH/Info.plist"
@@ -130,15 +130,15 @@ jobs:
         run: |
           set -e
           APP_PATH=$(find build/DerivedData -name "Tally.app" -type d | head -n 1)
-          rm -rf Payload Tally_v1_0_unsigned.ipa
+          rm -rf Payload Tally_v1_1_unsigned.ipa Tally_v1_0_unsigned.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          /usr/bin/zip -r Tally_v1_0_unsigned.ipa Payload
+          /usr/bin/zip -r Tally_v1_1_unsigned.ipa Payload
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Tally_v1_0_unsigned_ipa
-          path: Tally_v1_0_unsigned.ipa
+          name: Tally_v1_1_unsigned_ipa
+          path: Tally_v1_1_unsigned.ipa
           if-no-files-found: error
           retention-days: 7
