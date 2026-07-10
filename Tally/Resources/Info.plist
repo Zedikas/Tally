@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Tally</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Tally</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array><string>Icon-60</string></array>
+			<key>CFBundleIconName</key>
+			<string>AppIcon</string>
+			<key>UIPrerenderedIcon</key><false/>
+		</dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>ClassicBlue</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconClassicBlue</string></array><key>UIPrerenderedIcon</key><false/></dict>
+			<key>NeonDark</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconNeonDark</string></array><key>UIPrerenderedIcon</key><false/></dict>
+			<key>Glass</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconGlass</string></array><key>UIPrerenderedIcon</key><false/></dict>
+			<key>Pearl</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconPearl</string></array><key>UIPrerenderedIcon</key><false/></dict>
+			<key>Amber</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconAmber</string></array><key>UIPrerenderedIcon</key><false/></dict>
+			<key>TechGreen</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconTechGreen</string></array><key>UIPrerenderedIcon</key><false/></dict>
+			<key>CosmicPurple</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconCosmicPurple</string></array><key>UIPrerenderedIcon</key><false/></dict>
+			<key>Synthwave</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconSynthwave</string></array><key>UIPrerenderedIcon</key><false/></dict>
+		</dict>
+	</dict>
+	<key>LSRequiresIPhoneOS</key><true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key><true/>
+	<key>UIFileSharingEnabled</key><true/>
+	<key>UILaunchStoryboardName</key><string>LaunchScreen</string>
+	<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+	<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
+</dict>
+</plist>
