@@ -34,9 +34,9 @@ struct CountersView: View {
                         quickStats
                         if visibleCounters.isEmpty {
                             ContentUnavailableView(
-                                searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No Counters" : "No Matches",
+                                searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No Active Counters" : "No Matches",
                                 systemImage: "magnifyingglass",
-                                description: Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Create a counter to get started." : "Try a different name, group, or note.")
+                                description: Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Create a counter or restore one from the archive." : "Try a different name, group, or note.")
                             )
                             .padding(.top, 40)
                         } else {
@@ -99,9 +99,9 @@ struct CountersView: View {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered: [TallyCounter]
         if trimmed.isEmpty {
-            filtered = store.counters
+            filtered = store.activeCounters
         } else {
-            filtered = store.counters.filter { counter in
+            filtered = store.activeCounters.filter { counter in
                 counter.name.localizedCaseInsensitiveContains(trimmed) ||
                 counter.displayGroup.localizedCaseInsensitiveContains(trimmed) ||
                 counter.notes.localizedCaseInsensitiveContains(trimmed)
@@ -141,8 +141,8 @@ struct CountersView: View {
 
     private var quickStats: some View {
         HStack(spacing: 12) {
-            StatPill(title: "Counters", value: "\(store.counters.count)", systemImage: "number")
-            StatPill(title: "Shown", value: "\(visibleCounters.count)", systemImage: "line.3.horizontal.decrease.circle")
+            StatPill(title: "Active", value: "\(store.activeCounters.count)", systemImage: "number")
+            StatPill(title: "Archived", value: "\(store.archivedCounters.count)", systemImage: "archivebox")
             StatPill(title: "Total", value: "\(visibleCounters.map(\.value).reduce(0,+))", systemImage: "sum")
         }
         .padding(.horizontal)
@@ -174,6 +174,7 @@ struct CounterCard: View {
     let counter: TallyCounter
     @State private var showingEdit = false
     @State private var showingResetConfirmation = false
+    @State private var showingArchiveConfirmation = false
 
     var color: CounterColor { CounterColor(rawValue: counter.colorName) ?? .blue }
 
@@ -213,9 +214,9 @@ struct CounterCard: View {
 
             HStack(spacing: 8) {
                 StepButton(title: "−1") { store.adjust(counter, by: -1) }
-                StepButton(title: "+1") { store.adjust(counter, by: 1) }
-                StepButton(title: "+5") { store.adjust(counter, by: 5) }
-                StepButton(title: "+10") { store.adjust(counter, by: 10) }
+                ForEach(Array(counter.stepValues.enumerated()), id: \.offset) { _, step in
+                    StepButton(title: "+\(step)") { store.adjust(counter, by: step) }
+                }
                 Menu {
                     Button("+100") { store.adjust(counter, by: 100) }
                     Divider()
@@ -225,7 +226,7 @@ struct CounterCard: View {
                     Divider()
                     Button("Reset", role: .destructive) { showingResetConfirmation = true }
                     Button("Edit") { showingEdit = true }
-                    Button("Delete", role: .destructive) { store.deleteCounter(counter) }
+                    Button("Archive", role: .destructive) { showingArchiveConfirmation = true }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.headline.weight(.heavy))
@@ -239,6 +240,11 @@ struct CounterCard: View {
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(color.color.opacity(0.18), lineWidth: 1))
         .confirmationDialog("Reset \(counter.name)?", isPresented: $showingResetConfirmation) {
             Button("Reset Counter", role: .destructive) { store.reset(counter) }
+        }
+        .confirmationDialog("Archive \(counter.name)?", isPresented: $showingArchiveConfirmation) {
+            Button("Archive Counter", role: .destructive) { store.archiveCounter(counter) }
+        } message: {
+            Text("Archived counters disappear from the main list but can be restored from Settings.")
         }
         .sheet(isPresented: $showingEdit) { CounterEditorView(mode: .edit(counter)) }
     }
