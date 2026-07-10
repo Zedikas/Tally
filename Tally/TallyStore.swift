@@ -20,6 +20,10 @@ final class TallyStore: ObservableObject {
     }
 
     var groups: [String] {
+        groups(for: counters)
+    }
+
+    func groups(for counters: [TallyCounter]) -> [String] {
         Array(Set(counters.map { $0.displayGroup })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
@@ -27,10 +31,13 @@ final class TallyStore: ObservableObject {
         counters.filter { $0.displayGroup == group }
     }
 
-    func addCounter(name: String, group: String, goal: Int?, symbol: String, color: CounterColor, notes: String) {
+    @discardableResult
+    func addCounter(name: String, group: String, goal: Int?, symbol: String, color: CounterColor, notes: String) -> TallyCounter? {
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanName.isEmpty else { return }
-        counters.insert(TallyCounter(name: cleanName, value: 0, goal: goal, group: group, symbol: symbol, colorName: color.rawValue, notes: notes), at: 0)
+        guard !cleanName.isEmpty else { return nil }
+        let counter = TallyCounter(name: cleanName, value: 0, goal: goal, group: group, symbol: symbol, colorName: color.rawValue, notes: notes)
+        counters.insert(counter, at: 0)
+        return counter
     }
 
     func deleteCounter(_ counter: TallyCounter) {
@@ -43,6 +50,24 @@ final class TallyStore: ObservableObject {
         var updated = counter
         updated.updatedAt = Date()
         counters[index] = updated
+    }
+
+    func duplicateCounter(_ counter: TallyCounter) {
+        guard let index = counters.firstIndex(where: { $0.id == counter.id }) else { return }
+        var copy = counter
+        copy.id = UUID()
+        copy.name = uniqueCopyName(for: counter.name)
+        copy.createdAt = Date()
+        copy.updatedAt = Date()
+        counters.insert(copy, at: min(index + 1, counters.endIndex))
+    }
+
+    func moveCounter(_ counter: TallyCounter, by offset: Int) {
+        guard let index = counters.firstIndex(where: { $0.id == counter.id }) else { return }
+        let newIndex = index + offset
+        guard counters.indices.contains(newIndex) else { return }
+        let item = counters.remove(at: index)
+        counters.insert(item, at: newIndex)
     }
 
     func adjust(_ counter: TallyCounter, by delta: Int) {
@@ -75,7 +100,7 @@ final class TallyStore: ObservableObject {
     }
 
     func exportJSONURL() -> URL? {
-        let backup = TallyBackup(counters: counters, history: history, theme: theme)
+        let backup = TallyBackup(version: "1.1", counters: counters, history: history, theme: theme)
         guard let data = try? encoder.encode(backup) else { return nil }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Backup_\(Self.timestamp()).json")
         do {
@@ -108,8 +133,54 @@ final class TallyStore: ObservableObject {
         }
     }
 
+    func importBackup(from url: URL, replaceExisting: Bool) throws {
+        let securityScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if securityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let data = try Data(contentsOf: url)
+        let backup = try decoder.decode(TallyBackup.self, from: data)
+
+        if replaceExisting {
+            counters = backup.counters
+            history = backup.history
+            theme = backup.theme
+        } else {
+            var idMap: [UUID: UUID] = [:]
+            var importedCounters = backup.counters.map { counter in
+                var imported = counter
+                let newID = UUID()
+                idMap[counter.id] = newID
+                imported.id = newID
+                imported.createdAt = Date()
+                imported.updatedAt = Date()
+                imported.name = uniqueImportedName(for: imported.name)
+                return imported
+            }
+
+            for index in importedCounters.indices {
+                if counters.contains(where: { $0.name == importedCounters[index].name && $0.displayGroup == importedCounters[index].displayGroup }) {
+                    importedCounters[index].name = uniqueImportedName(for: importedCounters[index].name)
+                }
+            }
+
+            let importedHistory = backup.history.map { entry in
+                var imported = entry
+                imported.id = UUID()
+                imported.counterID = idMap[entry.counterID] ?? entry.counterID
+                return imported
+            }
+
+            counters.insert(contentsOf: importedCounters, at: 0)
+            history.insert(contentsOf: importedHistory, at: 0)
+        }
+    }
+
     private func save() {
-        let backup = TallyBackup(counters: counters, history: history, theme: theme)
+        let backup = TallyBackup(version: "1.1", counters: counters, history: history, theme: theme)
         guard let data = try? encoder.encode(backup) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
     }
@@ -120,6 +191,28 @@ final class TallyStore: ObservableObject {
         counters = backup.counters
         history = backup.history
         theme = backup.theme
+    }
+
+    private func uniqueCopyName(for baseName: String) -> String {
+        let base = baseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Counter" : baseName
+        var candidate = "\(base) Copy"
+        var number = 2
+        while counters.contains(where: { $0.name.localizedCaseInsensitiveCompare(candidate) == .orderedSame }) {
+            candidate = "\(base) Copy \(number)"
+            number += 1
+        }
+        return candidate
+    }
+
+    private func uniqueImportedName(for baseName: String) -> String {
+        var candidate = baseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Imported Counter" : baseName
+        guard counters.contains(where: { $0.name.localizedCaseInsensitiveCompare(candidate) == .orderedSame }) else { return candidate }
+        var number = 2
+        repeat {
+            candidate = "\(baseName) Imported \(number)"
+            number += 1
+        } while counters.contains(where: { $0.name.localizedCaseInsensitiveCompare(candidate) == .orderedSame })
+        return candidate
     }
 
     private static func timestamp() -> String {
