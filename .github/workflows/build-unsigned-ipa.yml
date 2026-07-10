@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.5 build 6 final trigger.
+# Tally v1.5 build 6 final trigger after exact-value, folders, and accent-color work.
 
 on:
   workflow_dispatch:
