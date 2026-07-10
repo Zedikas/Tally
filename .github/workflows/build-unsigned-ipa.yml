@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.6 build 8: details, favorites, folders, smart resets, milestones, analytics, locks, and redesigned appearance.
+# Tally v1.6 build 8 final trigger after duplicate-view cleanup and folder-color persistence fix.
 
 on:
   workflow_dispatch:
