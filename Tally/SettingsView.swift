@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -8,6 +9,9 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var showingChangelog = false
     @State private var iconMessage: String?
+    @State private var showingImporter = false
+    @State private var replaceOnImport = false
+    @State private var importMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -43,7 +47,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Export") {
+                Section("Backup & Import") {
                     Button("Create JSON Backup") { exportURL = store.exportJSONURL() }
                     Button("Export History CSV") { exportURL = store.exportCSVURL() }
                     if let exportURL {
@@ -51,15 +55,58 @@ struct SettingsView: View {
                             Label("Share Latest Export", systemImage: "square.and.arrow.up")
                         }
                     }
+
+                    Divider()
+
+                    Button {
+                        replaceOnImport = false
+                        showingImporter = true
+                    } label: {
+                        Label("Import & Merge JSON Backup", systemImage: "square.and.arrow.down")
+                    }
+
+                    Button(role: .destructive) {
+                        replaceOnImport = true
+                        showingImporter = true
+                    } label: {
+                        Label("Replace With JSON Backup", systemImage: "arrow.triangle.2.circlepath")
+                    }
+
+                    if let importMessage {
+                        Text(importMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("About") {
-                    LabeledContent("Version", value: "1.0 build 1")
+                    LabeledContent("Version", value: "1.1 build 2")
                     Button("Changelog") { showingChangelog = true }
                 }
             }
             .navigationTitle("Settings")
             .sheet(isPresented: $showingChangelog) { ChangelogView() }
+            .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
+                handleImport(result)
+            }
+        }
+    }
+
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else {
+                importMessage = "No backup file selected."
+                return
+            }
+            do {
+                try store.importBackup(from: url, replaceExisting: replaceOnImport)
+                importMessage = replaceOnImport ? "Backup imported and replaced current data." : "Backup imported and merged."
+            } catch {
+                importMessage = "Import failed: \(error.localizedDescription)"
+            }
+        case .failure(let error):
+            importMessage = "Import failed: \(error.localizedDescription)"
         }
     }
 
@@ -106,16 +153,24 @@ struct ChangelogView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Tally v1.0")
+                        Text("Tally v1.1")
                             .font(.title2.weight(.heavy))
-                        Text("A clean, reliable multi-counter app built from the lessons learned on Universal Downloader: single-target first, polished core features, and no fragile extension dependencies in v1.0.")
+                        Text("A focused usability update for finding counters faster, creating counters from templates, organizing existing counters, and restoring backups.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
                 }
 
-                Section("What's Included") {
+                Section("v1.1") {
+                    ChangelogRow(title: "Search", detail: "Search counters by name, group, or notes directly from the Counters tab.")
+                    ChangelogRow(title: "Sorting", detail: "Sort counters manually, by recent update, by name, or by value.")
+                    ChangelogRow(title: "Templates", detail: "Create new counters from presets like Daily Goal, Water, Workout Reps, Inventory, Game Score, Reading, Streak, and Shopping.")
+                    ChangelogRow(title: "Counter Actions", detail: "Duplicate counters and move them up or down from the card menu.")
+                    ChangelogRow(title: "Backup Import", detail: "Import a JSON backup by merging it into your current counters or replacing all local data.")
+                }
+
+                Section("v1.0") {
                     ChangelogRow(title: "Multiple Counters", detail: "Create counters with names, groups, goals, notes, symbols, and colors.")
                     ChangelogRow(title: "Fast Counting", detail: "Use -1, +1, +5, +10, +100, reset, and undo.")
                     ChangelogRow(title: "Groups", detail: "Counters are automatically grouped into clean sections.")
