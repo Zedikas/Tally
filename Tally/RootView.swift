@@ -29,6 +29,13 @@ struct CountersView: View {
     @State private var folderColor: CounterColor = .gray
     @AppStorage("tally.collapsedGroups") private var collapsedGroupsRaw = ""
 
+    private var showingFolderColor: Binding<Bool> {
+        Binding(
+            get: { folderColorGroup != nil },
+            set: { newValue in if !newValue { folderColorGroup = nil } }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -60,7 +67,9 @@ struct CountersView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu {
                         Picker("Sort", selection: $sort) {
-                            ForEach(CounterSort.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
+                            ForEach(CounterSort.allCases) { option in
+                                Label(option.title, systemImage: option.systemImage).tag(option)
+                            }
                         }
                         Divider()
                         Button("Expand All", systemImage: "rectangle.expand.vertical") { collapsedGroupsRaw = "" }
@@ -71,10 +80,19 @@ struct CountersView: View {
             }
             .sheet(isPresented: $showingAdd) { CounterEditorView(mode: .add) }
             .sheet(item: $exactValueCounter) { ExactValueEditor(counter: $0) }
-            .sheet(item: $folderColorGroup) { group in
-                NavigationStack {
-                    CounterColorSelectionView(selection: $folderColor, title: "\(group) Folder Color")
-                        .onDisappear { store.updateFolderColor(group: group, color: folderColor) }
+            .sheet(isPresented: showingFolderColor) {
+                if let group = folderColorGroup {
+                    NavigationStack {
+                        CounterColorSelectionView(selection: $folderColor, title: "\(group) Folder Color")
+                            .toolbar {
+                                ToolbarItem(placement: .confirmationAction) {
+                                    Button("Done") {
+                                        store.updateFolderColor(group: group, color: folderColor)
+                                        folderColorGroup = nil
+                                    }
+                                }
+                            }
+                    }
                 }
             }
         }
@@ -83,7 +101,9 @@ struct CountersView: View {
     private var favoritesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Favorites", systemImage: "pin.fill").font(.headline.weight(.heavy)).padding(.horizontal)
-            ForEach(pinnedCounters) { counter in counterLink(counter).padding(.horizontal) }
+            ForEach(pinnedCounters) { counter in
+                CounterCard(counter: counter) { exactValueCounter = counter }.padding(.horizontal)
+            }
         }
     }
 
@@ -104,26 +124,22 @@ struct CountersView: View {
                     Image(systemName: isCollapsed(group) ? "chevron.down" : "chevron.up").foregroundStyle(.secondary)
                 }.contentShape(Rectangle())
             }
-            .buttonStyle(.plain).padding(.horizontal)
+            .buttonStyle(.plain)
+            .padding(.horizontal)
             .contextMenu {
                 Button("Change Folder Color", systemImage: "paintpalette") {
                     folderColor = folderTint
                     folderColorGroup = group
                 }
             }
+
             if !isCollapsed(group) {
-                ForEach(items.filter { !$0.isPinned }) { counter in counterLink(counter).padding(.horizontal) }
+                ForEach(items.filter { !$0.isPinned }) { counter in
+                    CounterCard(counter: counter) { exactValueCounter = counter }.padding(.horizontal)
+                }
             }
         }
         .animation(.snappy, value: isCollapsed(group))
-    }
-
-    private func counterLink(_ counter: TallyCounter) -> some View {
-        NavigationLink(value: counter.id) {
-            CounterCard(counter: counter) { exactValueCounter = counter }
-        }
-        .buttonStyle(.plain)
-        .navigationDestination(for: UUID.self) { CounterDetailView(counterID: $0) }
     }
 
     private var collapsedGroups: Set<String> { Set(collapsedGroupsRaw.split(separator: "\n").map(String.init)) }
@@ -137,7 +153,9 @@ struct CountersView: View {
     private var visibleCounters: [TallyCounter] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered = trimmed.isEmpty ? store.activeCounters : store.activeCounters.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) || $0.displayGroup.localizedCaseInsensitiveContains(trimmed) || $0.notes.localizedCaseInsensitiveContains(trimmed)
+            $0.name.localizedCaseInsensitiveContains(trimmed) ||
+            $0.displayGroup.localizedCaseInsensitiveContains(trimmed) ||
+            $0.notes.localizedCaseInsensitiveContains(trimmed)
         }
         switch sort {
         case .manual: return filtered
@@ -154,7 +172,10 @@ struct CountersView: View {
     private var background: some View {
         Group {
             if store.theme == .oled { Color.black.ignoresSafeArea() }
-            else { LinearGradient(colors: [Color(.systemBackground), Color.blue.opacity(0.06)], startPoint: .top, endPoint: .bottom).ignoresSafeArea() }
+            else {
+                LinearGradient(colors: [Color(.systemBackground), Color.blue.opacity(0.06)], startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            }
         }
     }
 
@@ -168,13 +189,17 @@ struct CountersView: View {
 }
 
 struct StatPill: View {
-    let title: String; let value: String; let systemImage: String
+    let title: String
+    let value: String
+    let systemImage: String
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: systemImage).font(.caption.weight(.bold)).foregroundStyle(.secondary)
             Text(value).font(.title2.weight(.black)).contentTransition(.numericText())
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
@@ -192,36 +217,64 @@ struct CounterCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
-                Image(systemName: counter.symbol).font(.title2.weight(.bold)).foregroundStyle(color.color)
-                    .frame(width: 44, height: 44).background(color.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 5) {
-                        Text(counter.name).font(.headline.weight(.heavy))
-                        if counter.isPinned { Image(systemName: "pin.fill").font(.caption) }
-                        if counter.isLocked { Image(systemName: "lock.fill").font(.caption) }
-                    }
-                    if let goal = counter.goal, goal > 0 { Text("Goal: \(counter.value) / \(goal)").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
-                    else if !counter.notes.isEmpty { Text(counter.notes).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                    if counter.resetReminder != .none {
-                        Label(counter.automaticResetEnabled ? "Auto \(counter.resetReminder.title)" : counter.resetReminder.title, systemImage: counter.resetReminder.systemImage)
-                            .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                NavigationLink {
+                    CounterDetailView(counterID: counter.id)
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: counter.symbol)
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(color.color)
+                            .frame(width: 44, height: 44)
+                            .background(color.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 5) {
+                                Text(counter.name).font(.headline.weight(.heavy)).foregroundStyle(.primary)
+                                if counter.isPinned { Image(systemName: "pin.fill").font(.caption) }
+                                if counter.isLocked { Image(systemName: "lock.fill").font(.caption) }
+                            }
+                            if let goal = counter.goal, goal > 0 {
+                                Text("Goal: \(counter.value) / \(goal)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            } else if !counter.notes.isEmpty {
+                                Text(counter.notes).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            if counter.resetReminder != .none {
+                                Label(counter.automaticResetEnabled ? "Auto \(counter.resetReminder.title)" : counter.resetReminder.title, systemImage: counter.resetReminder.systemImage)
+                                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
+                .buttonStyle(.plain)
+
                 Spacer()
+
                 Button(action: onEditExactValue) {
-                    Text("\(counter.value)").font(.system(size: 42, weight: .black, design: .rounded)).foregroundStyle(color.color).monospacedDigit()
-                }.buttonStyle(.plain).disabled(counter.isLocked)
+                    Text("\(counter.value)")
+                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .foregroundStyle(color.color)
+                        .monospacedDigit()
+                }
+                .buttonStyle(.plain)
+                .disabled(counter.isLocked)
             }
+
             if let progress = counter.progress { ProgressView(value: progress).tint(color.color) }
+
             HStack(spacing: 8) {
-                StepButton(title: "−1") { store.safeAdjust(counter, by: -1) }
-                ForEach(counter.stepValues, id: \.self) { step in StepButton(title: "+\(step)") { store.safeAdjust(counter, by: step) } }
+                StepButton(title: "−1", isDisabled: counter.isLocked) { store.safeAdjust(counter, by: -1) }
+                ForEach(counter.stepValues, id: \.self) { step in
+                    StepButton(title: "+\(step)", isDisabled: counter.isLocked) { store.safeAdjust(counter, by: step) }
+                }
                 Menu {
+                    NavigationLink { CounterDetailView(counterID: counter.id) } label: { Label("Open Details", systemImage: "chart.bar.doc.horizontal") }
                     Button(counter.isPinned ? "Unpin" : "Pin", systemImage: counter.isPinned ? "pin.slash" : "pin") { store.togglePinned(counter) }
                     Button(counter.isLocked ? "Unlock" : "Lock", systemImage: counter.isLocked ? "lock.open" : "lock") { store.toggleLocked(counter) }
                     Button("Enter Exact Value", systemImage: "number.square") { onEditExactValue() }.disabled(counter.isLocked)
-                    if let session = store.activeSession(for: counter) { Button("End Session", systemImage: "stop.circle") { store.endSession(session) } }
-                    else { Button("Start Session", systemImage: "timer") { store.startSession(counterID: counter.id, title: counter.name, notes: "") } }
+                    if let session = store.activeSession(for: counter) {
+                        Button("End Session", systemImage: "stop.circle") { store.endSession(session) }
+                    } else {
+                        Button("Start Session", systemImage: "timer") { store.startSession(counterID: counter.id, title: counter.name, notes: "") }
+                    }
                     Divider()
                     Button("+100") { store.safeAdjust(counter, by: 100) }.disabled(counter.isLocked)
                     Button("Duplicate") { store.duplicateCounter(counter) }
@@ -231,22 +284,35 @@ struct CounterCard: View {
                     Button("Reset", role: .destructive) { showingResetConfirmation = true }.disabled(counter.isLocked)
                     Button("Edit") { showingEdit = true }
                     Button("Archive", role: .destructive) { showingArchiveConfirmation = true }
-                } label: { Image(systemName: "ellipsis").font(.headline.weight(.heavy)).frame(width: 44, height: 36) }
-                    .buttonStyle(.bordered)
-            }.disabled(counter.isLocked && false)
+                } label: {
+                    Image(systemName: "ellipsis").font(.headline.weight(.heavy)).frame(width: 44, height: 36)
+                }
+                .buttonStyle(.bordered)
+            }
         }
-        .padding(16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(color.color.opacity(0.18), lineWidth: 1))
-        .confirmationDialog("Reset \(counter.name)?", isPresented: $showingResetConfirmation) { Button("Reset Counter", role: .destructive) { store.safeReset(counter) } }
-        .confirmationDialog("Archive \(counter.name)?", isPresented: $showingArchiveConfirmation) { Button("Archive Counter", role: .destructive) { store.archiveCounter(counter) } }
+        .confirmationDialog("Reset \(counter.name)?", isPresented: $showingResetConfirmation) {
+            Button("Reset Counter", role: .destructive) { store.safeReset(counter) }
+        }
+        .confirmationDialog("Archive \(counter.name)?", isPresented: $showingArchiveConfirmation) {
+            Button("Archive Counter", role: .destructive) { store.archiveCounter(counter) }
+        }
         .sheet(isPresented: $showingEdit) { CounterEditorView(mode: .edit(counter)) }
     }
 }
 
 struct StepButton: View {
-    let title: String; let action: () -> Void
+    let title: String
+    var isDisabled = false
+    let action: () -> Void
+
     var body: some View {
-        Button(action: action) { Text(title).font(.subheadline.weight(.heavy)).frame(maxWidth: .infinity).frame(height: 36) }
-            .buttonStyle(.borderedProminent)
+        Button(action: action) {
+            Text(title).font(.subheadline.weight(.heavy)).frame(maxWidth: .infinity).frame(height: 36)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(isDisabled)
     }
 }
