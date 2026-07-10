@@ -123,7 +123,7 @@ struct CounterTemplate: Identifiable, Equatable {
 }
 
 struct TallyBackup: Codable {
-    var version: String = "1.1"
+    var version: String = "1.2"
     var exportedAt: Date = Date()
     var counters: [TallyCounter]
     var history: [TallyHistoryEntry]
