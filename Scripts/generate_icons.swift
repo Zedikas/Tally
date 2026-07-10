@@ -50,12 +50,16 @@ let appIconSizes: [(String, CGFloat)] = [
 ]
 
 for (filename, size) in appIconSizes {
-    try savePNG(render(theme: themes[0], size: size), to: appIconDir.appendingPathComponent(filename))
+    let url = appIconDir.appendingPathComponent(filename)
+    try savePNG(render(theme: themes[0], size: size), to: url)
+    print("Generated \(url.path)")
 }
 
 for theme in themes {
     for (suffix, size) in [("", CGFloat(1024)), ("@2x", CGFloat(120)), ("@3x", CGFloat(180))] {
-        try savePNG(render(theme: theme, size: size), to: altDir.appendingPathComponent("\(theme.name)\(suffix).png"))
+        let url = altDir.appendingPathComponent("\(theme.name)\(suffix).png")
+        try savePNG(render(theme: theme, size: size), to: url)
+        print("Generated \(url.path)")
     }
 }
 
@@ -88,7 +92,8 @@ func render(theme: Theme, size: CGFloat) -> NSImage {
 
     if theme.name.contains("Glass") || theme.name.contains("Pearl") {
         c(0xFFFFFF, 0.22).setFill()
-        NSBezierPath(roundedRect: rect.insetBy(dx: size * 0.10, dy: size * 0.64), xRadius: size * 0.08, yRadius: size * 0.08).fill()
+        let highlight = NSRect(x: size * 0.10, y: size * 0.64, width: size * 0.80, height: size * 0.18)
+        NSBezierPath(roundedRect: highlight, xRadius: size * 0.08, yRadius: size * 0.08).fill()
     }
 
     let body = NSRect(x: size * 0.335, y: size * 0.17, width: size * 0.33, height: size * 0.66)
