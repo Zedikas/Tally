@@ -7,6 +7,8 @@ struct RootView: View {
         TabView {
             CountersView()
                 .tabItem { Label("Counters", systemImage: "number.circle.fill") }
+            StatsView()
+                .tabItem { Label("Stats", systemImage: "chart.bar.xaxis") }
             HistoryView()
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
             SettingsView()
