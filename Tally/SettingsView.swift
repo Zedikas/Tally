@@ -30,17 +30,7 @@ struct SettingsView: View {
                             Text(theme.title).tag(theme)
                         }
                     }
-                    Picker("Accent Color", selection: accentBinding) {
-                        ForEach(TallyAccentColor.allCases) { accent in
-                            Label {
-                                Text(accent.title).foregroundStyle(accent.color)
-                            } icon: {
-                                Image(systemName: "circle.fill").foregroundStyle(accent.color)
-                            }
-                            .tag(accent)
-                        }
-                    }
-                    .tint(accentBinding.wrappedValue.color)
+                    AccentColorSelector(selection: accentBinding)
                 }
 
                 Section("App Icons") {
@@ -86,7 +76,6 @@ struct SettingsView: View {
                             Label("Share Latest Export", systemImage: "square.and.arrow.up")
                         }
                     }
-                    Divider()
                     Button { showingImporter = true } label: {
                         Label("Preview & Import JSON Backup", systemImage: "doc.text.magnifyingglass")
                     }
@@ -96,7 +85,7 @@ struct SettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("Version", value: "1.5 build 6")
+                    LabeledContent("Version", value: "1.5.1 build 7")
                     Button("Changelog") { showingChangelog = true }
                 }
             }
@@ -286,28 +275,25 @@ struct ChangelogView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Tally v1.5").font(.title2.weight(.heavy))
-                        Text("A usability update with exact value entry, collapsible folders, clearer menus, and global accent colors.")
+                        Text("Tally v1.5.1").font(.title2.weight(.heavy))
+                        Text("A visual polish update fixing color representation and the empty Backup & Import row.")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 8)
+                }
+                Section("v1.5.1") {
+                    ChangelogRow(title: "True-Color Selectors", detail: "Accent and counter colors now display their real colors instead of inheriting the current app tint.")
+                    ChangelogRow(title: "Backup Layout Fix", detail: "Removed the blank list row that appeared above the JSON import action.")
                 }
                 Section("v1.5") {
                     ChangelogRow(title: "Exact Value Entry", detail: "Tap a counter's large number to enter any whole number with the numeric keyboard.")
                     ChangelogRow(title: "Collapsible Folders", detail: "Counter groups now behave as folders and remember whether they are expanded or collapsed.")
                     ChangelogRow(title: "Reminder Icons", detail: "Daily, weekly, and monthly reminders now use clear 1, 7, and 30 icons.")
-                    ChangelogRow(title: "Color Menu", detail: "Color names and indicators are tinted in their actual colors.")
                     ChangelogRow(title: "Readable Symbols", detail: "Symbol menus use names like Water, Workout, Reading, and Inventory instead of SF Symbol identifiers.")
                     ChangelogRow(title: "Accent Colors", detail: "Choose a global app accent color from Settings, matching Universal Downloader's customization.")
                 }
-                Section("v1.4") {
-                    ChangelogRow(title: "Sessions Tab", detail: "Start timed counting sessions linked to a counter or as standalone sessions.")
-                    ChangelogRow(title: "Session Summaries", detail: "Ending a session records duration, start value, end value, and delta.")
-                    ChangelogRow(title: "Counter Session Actions", detail: "Start or end a linked session directly from a counter card menu.")
-                    ChangelogRow(title: "Session Export", detail: "Export sessions as CSV from Settings.")
-                    ChangelogRow(title: "Reset Reminder Notes", detail: "Counters can carry daily, weekly, or monthly reset reminder metadata without notification extensions.")
-                }
                 Section("Earlier Releases") {
+                    ChangelogRow(title: "v1.4", detail: "Timed sessions, session summaries, CSV export, and reset reminder metadata.")
                     ChangelogRow(title: "v1.3", detail: "Archive management, custom step buttons, and import previews.")
                     ChangelogRow(title: "v1.2", detail: "Stats dashboard, summaries, streaks, and history filters.")
                     ChangelogRow(title: "v1.1", detail: "Search, sorting, templates, duplication, movement, and JSON import.")
