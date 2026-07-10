@@ -1,0 +1,140 @@
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Tally/**'
+      - 'Scripts/**'
+      - 'project.yml'
+      - '.github/workflows/build-unsigned-ipa.yml'
+
+jobs:
+  build-unsigned-ipa:
+    name: Build unsigned IPA
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '(!F)') }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        run: |
+          set -e
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          set -e
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate app icon assets
+        run: |
+          set -e
+          swift Scripts/generate_icons.swift
+          test -f Tally/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png
+          test -f Tally/Resources/AlternateIcons/TallyIconClassicBlue.png
+          ls -lh Tally/Resources/AlternateIcons
+
+      - name: Generate Xcode project
+        run: |
+          set -e
+          xcodegen generate --spec project.yml
+
+      - name: Build unsigned app
+        run: |
+          set -e
+          xcodebuild \
+            -project Tally.xcodeproj \
+            -scheme Tally \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Patch app metadata and alternate icon files
+        run: |
+          set -e
+          APP_PATH=$(find build/DerivedData -name "Tally.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No Tally.app found in build output"
+            find build -maxdepth 6 -type d -name "*.app" || true
+            exit 1
+          fi
+
+          ICON_SRC="Tally/Resources/Assets.xcassets/AppIcon.appiconset"
+          ALT_ICON_SRC="Tally/Resources/AlternateIcons"
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tally" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Tally" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :UILaunchStoryboardName LaunchScreen" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :UILaunchStoryboardName string LaunchScreen" "$APP_PATH/Info.plist"
+
+          cp "$ICON_SRC/icon-60x60@2x-iphone.png" "$APP_PATH/Icon-60@2x.png"
+          cp "$ICON_SRC/icon-60x60@3x-iphone.png" "$APP_PATH/Icon-60@3x.png"
+          cp "$ICON_SRC/icon-1024.png" "$APP_PATH/iTunesArtwork"
+          cp "$ICON_SRC/icon-1024.png" "$APP_PATH/iTunesArtwork@2x"
+          cp "$ALT_ICON_SRC"/*.png "$APP_PATH"/
+
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleIcons" "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons dict" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon dict" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles array" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles:0 string Icon-60" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName string AppIcon" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundlePrimaryIcon:UIPrerenderedIcon bool false" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons dict" "$APP_PATH/Info.plist"
+
+          add_alt_icon() {
+            local icon_name="$1"
+            local file_name="$2"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:${icon_name} dict" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:${icon_name}:CFBundleIconFiles array" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:${icon_name}:CFBundleIconFiles:0 string ${file_name}" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:${icon_name}:UIPrerenderedIcon bool false" "$APP_PATH/Info.plist"
+          }
+
+          add_alt_icon ClassicBlue TallyIconClassicBlue
+          add_alt_icon NeonDark TallyIconNeonDark
+          add_alt_icon Glass TallyIconGlass
+          add_alt_icon Pearl TallyIconPearl
+          add_alt_icon Amber TallyIconAmber
+          add_alt_icon TechGreen TallyIconTechGreen
+          add_alt_icon CosmicPurple TallyIconCosmicPurple
+          add_alt_icon Synthwave TallyIconSynthwave
+
+          echo "Built app metadata:"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIcons:CFBundleAlternateIcons" "$APP_PATH/Info.plist"
+          test -e "$APP_PATH/LaunchScreen.storyboardc" || (echo "ERROR: LaunchScreen.storyboardc missing" && exit 1)
+
+      - name: Package unsigned IPA
+        run: |
+          set -e
+          APP_PATH=$(find build/DerivedData -name "Tally.app" -type d | head -n 1)
+          rm -rf Payload Tally_v1_0_unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          /usr/bin/zip -r Tally_v1_0_unsigned.ipa Payload
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tally_v1_0_unsigned_ipa
+          path: Tally_v1_0_unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
