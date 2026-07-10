@@ -86,17 +86,7 @@ struct CounterEditorView: View {
                 }
 
                 Section("Style") {
-                    Picker("Color", selection: $color) {
-                        ForEach(CounterColor.allCases) { option in
-                            Label {
-                                Text(option.title).foregroundStyle(option.color)
-                            } icon: {
-                                Image(systemName: "circle.fill").foregroundStyle(option.color)
-                            }
-                            .tag(option)
-                        }
-                    }
-                    .tint(color.color)
+                    CounterColorSelector(selection: $color)
 
                     Picker("Symbol", selection: $symbol) {
                         ForEach(CounterSymbolOption.all) { option in
