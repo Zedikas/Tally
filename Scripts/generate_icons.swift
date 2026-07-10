@@ -31,11 +31,31 @@ let themes = [
     Theme(name: "TallyIconSynthwave", bg1: 0xFF38C7, bg2: 0x006DFF, body1: 0x9738FF, body2: 0x111A8F, accent: 0x22E7FF, screen: 0x12001E, digit: 0xFFC8FF, glow: true)
 ]
 
-let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-let appIconDir = root.appendingPathComponent("Tally/Resources/Assets.xcassets/AppIcon.appiconset", isDirectory: true)
-let altDir = root.appendingPathComponent("Tally/Resources/AlternateIcons", isDirectory: true)
-try FileManager.default.createDirectory(at: appIconDir, withIntermediateDirectories: true)
-try FileManager.default.createDirectory(at: altDir, withIntermediateDirectories: true)
+let contentsJSON = """
+{
+  "images" : [
+    { "filename" : "icon-20x20@2x-iphone.png", "idiom" : "iphone", "scale" : "2x", "size" : "20x20" },
+    { "filename" : "icon-20x20@3x-iphone.png", "idiom" : "iphone", "scale" : "3x", "size" : "20x20" },
+    { "filename" : "icon-29x29@2x-iphone.png", "idiom" : "iphone", "scale" : "2x", "size" : "29x29" },
+    { "filename" : "icon-29x29@3x-iphone.png", "idiom" : "iphone", "scale" : "3x", "size" : "29x29" },
+    { "filename" : "icon-40x40@2x-iphone.png", "idiom" : "iphone", "scale" : "2x", "size" : "40x40" },
+    { "filename" : "icon-40x40@3x-iphone.png", "idiom" : "iphone", "scale" : "3x", "size" : "40x40" },
+    { "filename" : "icon-60x60@2x-iphone.png", "idiom" : "iphone", "scale" : "2x", "size" : "60x60" },
+    { "filename" : "icon-60x60@3x-iphone.png", "idiom" : "iphone", "scale" : "3x", "size" : "60x60" },
+    { "filename" : "icon-20x20@1x-ipad.png", "idiom" : "ipad", "scale" : "1x", "size" : "20x20" },
+    { "filename" : "icon-20x20@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "20x20" },
+    { "filename" : "icon-29x29@1x-ipad.png", "idiom" : "ipad", "scale" : "1x", "size" : "29x29" },
+    { "filename" : "icon-29x29@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "29x29" },
+    { "filename" : "icon-40x40@1x-ipad.png", "idiom" : "ipad", "scale" : "1x", "size" : "40x40" },
+    { "filename" : "icon-40x40@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "40x40" },
+    { "filename" : "icon-76x76@1x-ipad.png", "idiom" : "ipad", "scale" : "1x", "size" : "76x76" },
+    { "filename" : "icon-76x76@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "76x76" },
+    { "filename" : "icon-83_5x83_5@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "83.5x83.5" },
+    { "filename" : "icon-1024.png", "idiom" : "ios-marketing", "scale" : "1x", "size" : "1024x1024" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
+"""
 
 let appIconSizes: [(String, CGFloat)] = [
     ("icon-20x20@2x-iphone.png", 40), ("icon-20x20@3x-iphone.png", 60),
@@ -48,23 +68,6 @@ let appIconSizes: [(String, CGFloat)] = [
     ("icon-76x76@1x-ipad.png", 76), ("icon-76x76@2x-ipad.png", 152),
     ("icon-83_5x83_5@2x-ipad.png", 167), ("icon-1024.png", 1024)
 ]
-
-for (filename, size) in appIconSizes {
-    let url = appIconDir.appendingPathComponent(filename)
-    try savePNG(render(theme: themes[0], size: size), to: url)
-    print("Generated \(url.path)")
-}
-
-for theme in themes {
-    for (suffix, size) in [("", CGFloat(1024)), ("@2x", CGFloat(120)), ("@3x", CGFloat(180))] {
-        let url = altDir.appendingPathComponent("\(theme.name)\(suffix).png")
-        try savePNG(render(theme: theme, size: size), to: url)
-        print("Generated \(url.path)")
-    }
-}
-
-try contentsJSON.write(to: appIconDir.appendingPathComponent("Contents.json"), atomically: true, encoding: .utf8)
-print("Generated Tally app icon assets and alternate icons")
 
 func render(theme: Theme, size: CGFloat) -> NSImage {
     let image = NSImage(size: NSSize(width: size, height: size))
@@ -147,28 +150,25 @@ func savePNG(_ image: NSImage, to url: URL) throws {
     try data.write(to: url, options: .atomic)
 }
 
-let contentsJSON = """
-{
-  "images" : [
-    { "filename" : "icon-20x20@2x-iphone.png", "idiom" : "iphone", "scale" : "2x", "size" : "20x20" },
-    { "filename" : "icon-20x20@3x-iphone.png", "idiom" : "iphone", "scale" : "3x", "size" : "20x20" },
-    { "filename" : "icon-29x29@2x-iphone.png", "idiom" : "iphone", "scale" : "2x", "size" : "29x29" },
-    { "filename" : "icon-29x29@3x-iphone.png", "idiom" : "iphone", "scale" : "3x", "size" : "29x29" },
-    { "filename" : "icon-40x40@2x-iphone.png", "idiom" : "iphone", "scale" : "2x", "size" : "40x40" },
-    { "filename" : "icon-40x40@3x-iphone.png", "idiom" : "iphone", "scale" : "3x", "size" : "40x40" },
-    { "filename" : "icon-60x60@2x-iphone.png", "idiom" : "iphone", "scale" : "2x", "size" : "60x60" },
-    { "filename" : "icon-60x60@3x-iphone.png", "idiom" : "iphone", "scale" : "3x", "size" : "60x60" },
-    { "filename" : "icon-20x20@1x-ipad.png", "idiom" : "ipad", "scale" : "1x", "size" : "20x20" },
-    { "filename" : "icon-20x20@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "20x20" },
-    { "filename" : "icon-29x29@1x-ipad.png", "idiom" : "ipad", "scale" : "1x", "size" : "29x29" },
-    { "filename" : "icon-29x29@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "29x29" },
-    { "filename" : "icon-40x40@1x-ipad.png", "idiom" : "ipad", "scale" : "1x", "size" : "40x40" },
-    { "filename" : "icon-40x40@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "40x40" },
-    { "filename" : "icon-76x76@1x-ipad.png", "idiom" : "ipad", "scale" : "1x", "size" : "76x76" },
-    { "filename" : "icon-76x76@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "76x76" },
-    { "filename" : "icon-83_5x83_5@2x-ipad.png", "idiom" : "ipad", "scale" : "2x", "size" : "83.5x83.5" },
-    { "filename" : "icon-1024.png", "idiom" : "ios-marketing", "scale" : "1x", "size" : "1024x1024" }
-  ],
-  "info" : { "author" : "xcode", "version" : 1 }
+let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+let appIconDir = root.appendingPathComponent("Tally/Resources/Assets.xcassets/AppIcon.appiconset", isDirectory: true)
+let altDir = root.appendingPathComponent("Tally/Resources/AlternateIcons", isDirectory: true)
+try FileManager.default.createDirectory(at: appIconDir, withIntermediateDirectories: true)
+try FileManager.default.createDirectory(at: altDir, withIntermediateDirectories: true)
+
+for (filename, size) in appIconSizes {
+    let url = appIconDir.appendingPathComponent(filename)
+    try savePNG(render(theme: themes[0], size: size), to: url)
+    print("Generated \(url.path)")
 }
-"""
+
+for theme in themes {
+    for (suffix, size) in [("", CGFloat(1024)), ("@2x", CGFloat(120)), ("@3x", CGFloat(180))] {
+        let url = altDir.appendingPathComponent("\(theme.name)\(suffix).png")
+        try savePNG(render(theme: theme, size: size), to: url)
+        print("Generated \(url.path)")
+    }
+}
+
+try contentsJSON.write(to: appIconDir.appendingPathComponent("Contents.json"), atomically: true, encoding: .utf8)
+print("Generated Tally app icon assets and alternate icons")
