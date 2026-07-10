@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Final Tally v1.6 build 8 trigger after the custom accent compile fix.
+# Retry Tally v1.6 build 8 after removing the duplicate v1.6 implementation.
 
 on:
   workflow_dispatch:
