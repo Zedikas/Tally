@@ -2,6 +2,11 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var store: TallyStore
+    @AppStorage("tally.accentColor") private var accentColorRaw = TallyAccentColor.blue.rawValue
+
+    private var accentColor: TallyAccentColor {
+        TallyAccentColor(rawValue: accentColorRaw) ?? .blue
+    }
 
     var body: some View {
         TabView {
@@ -16,7 +21,7 @@ struct RootView: View {
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
-        .tint(.blue)
+        .tint(accentColor.color)
         .background(store.theme == .oled ? Color.black : Color.clear)
     }
 }
@@ -26,6 +31,8 @@ struct CountersView: View {
     @State private var showingAdd = false
     @State private var searchText = ""
     @State private var sort: CounterSort = .manual
+    @State private var exactValueCounter: TallyCounter?
+    @AppStorage("tally.collapsedGroups") private var collapsedGroupsRaw = ""
 
     var body: some View {
         NavigationStack {
@@ -44,24 +51,42 @@ struct CountersView: View {
                         } else {
                             ForEach(visibleGroups, id: \.self) { group in
                                 VStack(alignment: .leading, spacing: 10) {
-                                    HStack {
-                                        Text(group)
-                                            .font(.headline.weight(.heavy))
-                                        Spacer()
-                                        Text("\(counters(in: group).count)")
-                                            .font(.caption.weight(.bold))
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 9)
-                                            .padding(.vertical, 5)
-                                            .background(.thinMaterial, in: Capsule())
+                                    Button {
+                                        toggleGroup(group)
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: "folder.fill")
+                                                .foregroundStyle(.secondary)
+                                            Text(group)
+                                                .font(.headline.weight(.heavy))
+                                                .foregroundStyle(.primary)
+                                            Spacer()
+                                            Text("\(counters(in: group).count)")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(.secondary)
+                                                .padding(.horizontal, 9)
+                                                .padding(.vertical, 5)
+                                                .background(.thinMaterial, in: Capsule())
+                                            Image(systemName: isCollapsed(group) ? "chevron.down" : "chevron.up")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .contentShape(Rectangle())
                                     }
+                                    .buttonStyle(.plain)
                                     .padding(.horizontal)
 
-                                    ForEach(counters(in: group)) { counter in
-                                        CounterCard(counter: counter)
+                                    if !isCollapsed(group) {
+                                        ForEach(counters(in: group)) { counter in
+                                            CounterCard(counter: counter) {
+                                                exactValueCounter = counter
+                                            }
                                             .padding(.horizontal)
+                                            .transition(.opacity.combined(with: .move(edge: .top)))
+                                        }
                                     }
                                 }
+                                .animation(.snappy, value: isCollapsed(group))
                             }
                         }
                     }
@@ -84,8 +109,15 @@ struct CountersView: View {
                                 Label(option.title, systemImage: option.systemImage).tag(option)
                             }
                         }
+                        Divider()
+                        Button("Expand All", systemImage: "rectangle.expand.vertical") {
+                            collapsedGroupsRaw = ""
+                        }
+                        Button("Collapse All", systemImage: "rectangle.compress.vertical") {
+                            collapsedGroupsRaw = visibleGroups.joined(separator: "\n")
+                        }
                     } label: {
-                        Label("Sort", systemImage: "arrow.up.arrow.down.circle")
+                        Label("Sort and Folders", systemImage: "arrow.up.arrow.down.circle")
                     }
 
                     Button { showingAdd = true } label: {
@@ -94,7 +126,28 @@ struct CountersView: View {
                 }
             }
             .sheet(isPresented: $showingAdd) { CounterEditorView(mode: .add) }
+            .sheet(item: $exactValueCounter) { counter in
+                ExactValueEditor(counter: counter)
+            }
         }
+    }
+
+    private var collapsedGroups: Set<String> {
+        Set(collapsedGroupsRaw.split(separator: "\n").map(String.init))
+    }
+
+    private func isCollapsed(_ group: String) -> Bool {
+        collapsedGroups.contains(group)
+    }
+
+    private func toggleGroup(_ group: String) {
+        var groups = collapsedGroups
+        if groups.contains(group) {
+            groups.remove(group)
+        } else {
+            groups.insert(group)
+        }
+        collapsedGroupsRaw = groups.sorted().joined(separator: "\n")
     }
 
     private var visibleCounters: [TallyCounter] {
@@ -174,6 +227,7 @@ struct StatPill: View {
 struct CounterCard: View {
     @EnvironmentObject private var store: TallyStore
     let counter: TallyCounter
+    let onEditExactValue: () -> Void
     @State private var showingEdit = false
     @State private var showingResetConfirmation = false
     @State private var showingArchiveConfirmation = false
@@ -200,24 +254,22 @@ struct CounterCard: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-
-                    HStack(spacing: 6) {
-                        if counter.resetReminder != .none {
-                            Label(counter.resetReminder.title, systemImage: counter.resetReminder.systemImage)
-                        }
-                        if store.activeSession(for: counter) != nil {
-                            Label("Session", systemImage: "timer")
-                        }
+                    if counter.resetReminder != .none {
+                        Label(counter.resetReminder.title, systemImage: counter.resetReminder.v15SystemImage)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(counter.value)")
-                    .font(.system(size: 42, weight: .black, design: .rounded))
-                    .foregroundStyle(color.color)
-                    .contentTransition(.numericText())
-                    .monospacedDigit()
+                Button(action: onEditExactValue) {
+                    Text("\(counter.value)")
+                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .foregroundStyle(color.color)
+                        .contentTransition(.numericText())
+                        .monospacedDigit()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Set exact value for \(counter.name)")
             }
 
             if let progress = counter.progress {
@@ -231,13 +283,14 @@ struct CounterCard: View {
                     StepButton(title: "+\(step)") { store.adjust(counter, by: step) }
                 }
                 Menu {
-                    Button("+100") { store.adjust(counter, by: 100) }
-                    Divider()
-                    if let activeSession = store.activeSession(for: counter) {
-                        Button("End Session") { store.endSession(activeSession) }
+                    Button("Enter Exact Value", systemImage: "number.square") { onEditExactValue() }
+                    if let session = store.activeSession(for: counter) {
+                        Button("End Session", systemImage: "stop.circle") { store.endSession(session) }
                     } else {
-                        Button("Start Session") { store.startSession(counterID: counter.id, title: counter.name, notes: "") }
+                        Button("Start Session", systemImage: "timer") { store.startSession(counterID: counter.id, title: counter.name, notes: "") }
                     }
+                    Divider()
+                    Button("+100") { store.adjust(counter, by: 100) }
                     Button("Duplicate") { store.duplicateCounter(counter) }
                     Button("Move Up") { store.moveCounter(counter, by: -1) }
                     Button("Move Down") { store.moveCounter(counter, by: 1) }
