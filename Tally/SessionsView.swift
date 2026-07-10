@@ -83,7 +83,7 @@ struct NewSessionView: View {
                 Section("Session") {
                     TextField("Title", text: $title)
                     Picker("Counter", selection: $selectedCounterID) {
-                        Text("Standalone Session").tag(UUID?.none)
+                        Text("Standalone Session").tag(Optional<UUID>.none)
                         ForEach(store.activeCounters) { counter in
                             Text(counter.name).tag(Optional(counter.id))
                         }
