@@ -17,11 +17,22 @@ Delivered:
 
 ## v1.2
 
+Delivered:
+
 - Stats dashboard
-- Daily/weekly summaries
-- Streak counters
+- Daily summaries
+- Goal completion overview
+- Top counters by selected date range
+- Streak insights based on history
 - Better history filters
+
+## v1.3
+
 - Import preview before replacing data
+- More detailed history analytics
+- Counter archive instead of hard delete
+- Optional counter-specific custom step values
+- Per-counter reset reminders without extensions
 
 ## v2.0
 
