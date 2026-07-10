@@ -26,12 +26,43 @@ struct CounterEditorView: View {
 
     private let symbols = [
         "number.circle.fill", "checkmark.circle.fill", "drop.fill", "flame.fill", "bolt.fill",
-        "book.fill", "cart.fill", "gamecontroller.fill", "figure.strengthtraining.traditional", "star.fill"
+        "book.fill", "cart.fill", "gamecontroller.fill", "figure.strengthtraining.traditional", "star.fill",
+        "shippingbox.fill", "calendar", "trophy.fill", "timer", "list.bullet.clipboard.fill"
     ]
 
     var body: some View {
         NavigationStack {
             Form {
+                if isAdding {
+                    Section("Templates") {
+                        ForEach(CounterTemplate.allCases) { template in
+                            Button { apply(template) } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: template.symbol)
+                                        .font(.headline.weight(.bold))
+                                        .foregroundStyle(template.color.color)
+                                        .frame(width: 34, height: 34)
+                                        .background(template.color.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(template.title)
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundStyle(.primary)
+                                        Text(template.subtitle)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if templateMatchesCurrent(template) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 Section("Counter") {
                     TextField("Name", text: $name)
                     TextField("Group", text: $group)
@@ -75,6 +106,11 @@ struct CounterEditorView: View {
         }
     }
 
+    private var isAdding: Bool {
+        if case .add = mode { return true }
+        return false
+    }
+
     private func populate() {
         guard case .edit(let counter) = mode else { return }
         name = counter.name
@@ -83,6 +119,23 @@ struct CounterEditorView: View {
         symbol = counter.symbol
         color = CounterColor(rawValue: counter.colorName) ?? .blue
         notes = counter.notes
+    }
+
+    private func apply(_ template: CounterTemplate) {
+        name = template.name
+        group = template.group
+        goalText = template.goal.map(String.init) ?? ""
+        symbol = template.symbol
+        color = template.color
+        notes = template.notes
+    }
+
+    private func templateMatchesCurrent(_ template: CounterTemplate) -> Bool {
+        name == template.name &&
+        group == template.group &&
+        goalText == (template.goal.map(String.init) ?? "") &&
+        symbol == template.symbol &&
+        color == template.color
     }
 
     private func save() {
