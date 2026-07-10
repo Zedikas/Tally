@@ -1,84 +1,44 @@
 # Tally Roadmap
 
-## v1.0
+## v1.0–v1.5
 
 Delivered:
 
-- Multiple counters
-- Groups
-- History
-- Themes
-- Export
-- Alternate icons
+- Multiple counters, groups, goals, history, themes, exports, and alternate icons
+- Search, sorting, templates, duplication, and counter movement
+- Stats, summaries, streak insights, and history filters
+- Archive management, custom step buttons, and import previews
+- Timed sessions and reset schedules
+- Exact value entry, collapsible folders, readable symbols, and accent colors
 
-## v1.1
-
-Delivered:
-
-- Counter templates
-- Search and sorting
-- Duplicate counters
-- Manual counter movement
-- JSON backup import
-
-## v1.2
+## v1.6
 
 Delivered:
 
-- Stats dashboard
-- Daily summaries
-- Goal completion overview
-- Top counters
-- Streak insights
-- Better history filters
+- Counter detail dashboards
+- Counter-specific activity charts and analytics
+- Pinned Favorites section
+- Folder colors, counts, and combined totals
+- Automatic daily, weekly, and monthly reset checks
+- Configurable milestones with History events
+- Counter locking
+- Archive search
+- Dedicated Appearance settings page
+- Preset and custom accent colors
+- Dedicated App Icon gallery with large previews
+- Full-page counter color, folder color, and symbol selectors
+- Backward-compatible v1.6 backup format
 
-## v1.3
+## v1.7 candidates
 
-Delivered:
-
-- Import preview
-- Counter archive
-- Archive manager
-- Counter-specific step values
-- Backward-compatible data migration
-
-## v1.4
-
-Delivered:
-
-- Timed sessions
-- Linked and standalone sessions
-- Active session timers
-- Session summaries
-- Sessions CSV export
-- Sessions in backup/import
-- Reset reminder metadata
-
-## v1.5
-
-Delivered:
-
-- Exact value entry from counter cards
-- Collapsible counter folders
-- Remembered folder state
-- Expand All and Collapse All
-- Clear 1-day, 7-day, and 30-day reminder icons
-- Properly tinted color options
-- Human-readable symbol names
-- Global accent-color selection
-
-## v1.6 candidates
-
-- Pinned counters
-- Compact, card, and grid layouts
-- Advanced Swift Charts analytics
-- Counter detail pages
-- Expanded notes and tags
-- Saved filters and smart folders
+- Compact, card, and grid counter layouts
+- Tags and smart folders
+- Saved filters
 - Batch counter actions
-- Automatic in-app reset checks when Tally launches
-- Archive search and sorting
-- Better session filtering and editing
+- Session editing, categories, and goals
+- Folder-level goals and progress
+- More chart styles and comparison ranges
+- Data diagnostics and repair tools
 
 ## Extension-dependent future releases
 
