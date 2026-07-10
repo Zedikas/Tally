@@ -26,6 +26,7 @@ struct CounterEditorView: View {
     @State private var stepOneText = "1"
     @State private var stepTwoText = "5"
     @State private var stepThreeText = "10"
+    @State private var resetReminder: ResetReminder = .none
 
     private let symbols = [
         "number.circle.fill", "checkmark.circle.fill", "drop.fill", "flame.fill", "bolt.fill",
@@ -86,6 +87,17 @@ struct CounterEditorView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Reset Reminder") {
+                    Picker("Reminder", selection: $resetReminder) {
+                        ForEach(ResetReminder.allCases) { reminder in
+                            Label(reminder.title, systemImage: reminder.systemImage).tag(reminder)
+                        }
+                    }
+                    Text(resetReminder.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Style") {
                     Picker("Color", selection: $color) {
                         ForEach(CounterColor.allCases) { color in
@@ -138,6 +150,7 @@ struct CounterEditorView: View {
         symbol = counter.symbol
         color = CounterColor(rawValue: counter.colorName) ?? .blue
         notes = counter.notes
+        resetReminder = counter.resetReminder
         applyStepValues(counter.stepValues)
     }
 
@@ -148,6 +161,7 @@ struct CounterEditorView: View {
         symbol = template.symbol
         color = template.color
         notes = template.notes
+        resetReminder = template.resetReminder
         applyStepValues(template.stepValues)
     }
 
@@ -164,6 +178,7 @@ struct CounterEditorView: View {
         goalText == (template.goal.map(String.init) ?? "") &&
         symbol == template.symbol &&
         color == template.color &&
+        resetReminder == template.resetReminder &&
         stepValues == TallyCounter.sanitizedStepValues(template.stepValues)
     }
 
@@ -171,7 +186,7 @@ struct CounterEditorView: View {
         let goal = Int(goalText.trimmingCharacters(in: .whitespacesAndNewlines))
         switch mode {
         case .add:
-            store.addCounter(name: name, group: group, goal: goal, symbol: symbol, color: color, notes: notes, stepValues: stepValues)
+            store.addCounter(name: name, group: group, goal: goal, symbol: symbol, color: color, notes: notes, stepValues: stepValues, resetReminder: resetReminder)
         case .edit(var counter):
             counter.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             counter.group = group
@@ -180,6 +195,7 @@ struct CounterEditorView: View {
             counter.colorName = color.rawValue
             counter.notes = notes
             counter.stepValues = stepValues
+            counter.resetReminder = resetReminder
             store.updateCounter(counter)
         }
         dismiss()
