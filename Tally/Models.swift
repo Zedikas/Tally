@@ -14,6 +14,7 @@ struct TallyCounter: Identifiable, Codable, Equatable {
     var updatedAt: Date
     var isArchived: Bool
     var stepValues: [Int]
+    var resetReminder: ResetReminder
 
     init(
         id: UUID = UUID(),
@@ -27,7 +28,8 @@ struct TallyCounter: Identifiable, Codable, Equatable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         isArchived: Bool = false,
-        stepValues: [Int] = [1, 5, 10]
+        stepValues: [Int] = [1, 5, 10],
+        resetReminder: ResetReminder = .none
     ) {
         self.id = id
         self.name = name
@@ -41,6 +43,7 @@ struct TallyCounter: Identifiable, Codable, Equatable {
         self.updatedAt = updatedAt
         self.isArchived = isArchived
         self.stepValues = Self.sanitizedStepValues(stepValues)
+        self.resetReminder = resetReminder
     }
 
     var displayGroup: String {
@@ -53,7 +56,7 @@ struct TallyCounter: Identifiable, Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, value, goal, group, symbol, colorName, notes, createdAt, updatedAt, isArchived, stepValues
+        case id, name, value, goal, group, symbol, colorName, notes, createdAt, updatedAt, isArchived, stepValues, resetReminder
     }
 
     init(from decoder: Decoder) throws {
@@ -70,6 +73,7 @@ struct TallyCounter: Identifiable, Codable, Equatable {
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
         stepValues = Self.sanitizedStepValues(try container.decodeIfPresent([Int].self, forKey: .stepValues) ?? [1, 5, 10])
+        resetReminder = try container.decodeIfPresent(ResetReminder.self, forKey: .resetReminder) ?? .none
     }
 
     func encode(to encoder: Encoder) throws {
@@ -86,6 +90,7 @@ struct TallyCounter: Identifiable, Codable, Equatable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(isArchived, forKey: .isArchived)
         try container.encode(Self.sanitizedStepValues(stepValues), forKey: .stepValues)
+        try container.encode(resetReminder, forKey: .resetReminder)
     }
 
     static func sanitizedStepValues(_ values: [Int]) -> [Int] {
@@ -110,6 +115,61 @@ struct TallyHistoryEntry: Identifiable, Codable, Equatable {
     var beforeValue: Int
     var afterValue: Int
     var date: Date = Date()
+}
+
+struct TallySession: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var title: String
+    var counterID: UUID?
+    var counterName: String
+    var startedAt: Date = Date()
+    var endedAt: Date?
+    var startValue: Int
+    var endValue: Int?
+    var notes: String
+
+    var isActive: Bool { endedAt == nil }
+
+    var duration: TimeInterval {
+        (endedAt ?? Date()).timeIntervalSince(startedAt)
+    }
+
+    var delta: Int? {
+        guard let endValue else { return nil }
+        return endValue - startValue
+    }
+}
+
+enum ResetReminder: String, CaseIterable, Codable, Identifiable {
+    case none, daily, weekly, monthly
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .none: return "None"
+        case .daily: return "Daily"
+        case .weekly: return "Weekly"
+        case .monthly: return "Monthly"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .none: return "No reset reminder note"
+        case .daily: return "Good for habits and daily goals"
+        case .weekly: return "Good for weekly tracking"
+        case .monthly: return "Good for monthly totals"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .none: return "bell.slash"
+        case .daily: return "sun.max"
+        case .weekly: return "calendar.badge.clock"
+        case .monthly: return "calendar"
+        }
+    }
 }
 
 enum CounterColor: String, CaseIterable, Codable, Identifiable {
@@ -187,26 +247,51 @@ struct CounterTemplate: Identifiable, Equatable {
     var color: CounterColor
     var notes: String
     var stepValues: [Int]
+    var resetReminder: ResetReminder
 
     static let allCases: [CounterTemplate] = [
-        CounterTemplate(id: "simple", title: "Simple Tally", subtitle: "Basic count-up tracker", name: "New Counter", group: "General", goal: nil, symbol: "number.circle.fill", color: .blue, notes: "", stepValues: [1, 5, 10]),
-        CounterTemplate(id: "daily-goal", title: "Daily Goal", subtitle: "Track progress toward a target", name: "Daily Goal", group: "Today", goal: 10, symbol: "checkmark.circle.fill", color: .green, notes: "Resets manually for now.", stepValues: [1, 2, 5]),
-        CounterTemplate(id: "water", title: "Water", subtitle: "Daily glasses or bottles", name: "Water", group: "Today", goal: 8, symbol: "drop.fill", color: .blue, notes: "Daily hydration", stepValues: [1, 2, 4]),
-        CounterTemplate(id: "workout", title: "Workout Reps", subtitle: "Sets, reps, or exercises", name: "Workout Reps", group: "Fitness", goal: 100, symbol: "figure.strengthtraining.traditional", color: .green, notes: "", stepValues: [1, 10, 25]),
-        CounterTemplate(id: "inventory", title: "Inventory", subtitle: "Stock or item tracking", name: "Inventory", group: "Inventory", goal: nil, symbol: "shippingbox.fill", color: .orange, notes: "Use + and − to adjust stock.", stepValues: [1, 5, 20]),
-        CounterTemplate(id: "score", title: "Game Score", subtitle: "Simple score counter", name: "Player Score", group: "Games", goal: nil, symbol: "gamecontroller.fill", color: .purple, notes: "", stepValues: [1, 2, 3]),
-        CounterTemplate(id: "reading", title: "Reading", subtitle: "Pages, chapters, or sessions", name: "Reading", group: "Focus", goal: 50, symbol: "book.fill", color: .purple, notes: "", stepValues: [1, 5, 10]),
-        CounterTemplate(id: "streak", title: "Streak", subtitle: "Count days or wins", name: "Streak", group: "Habits", goal: nil, symbol: "flame.fill", color: .red, notes: "", stepValues: [1, 7, 30]),
-        CounterTemplate(id: "shopping", title: "Shopping List", subtitle: "Items collected or packed", name: "Items", group: "Shopping", goal: nil, symbol: "cart.fill", color: .teal, notes: "", stepValues: [1, 5, 10])
+        CounterTemplate(id: "simple", title: "Simple Tally", subtitle: "Basic count-up tracker", name: "New Counter", group: "General", goal: nil, symbol: "number.circle.fill", color: .blue, notes: "", stepValues: [1, 5, 10], resetReminder: .none),
+        CounterTemplate(id: "daily-goal", title: "Daily Goal", subtitle: "Track progress toward a target", name: "Daily Goal", group: "Today", goal: 10, symbol: "checkmark.circle.fill", color: .green, notes: "Resets manually for now.", stepValues: [1, 2, 5], resetReminder: .daily),
+        CounterTemplate(id: "water", title: "Water", subtitle: "Daily glasses or bottles", name: "Water", group: "Today", goal: 8, symbol: "drop.fill", color: .blue, notes: "Daily hydration", stepValues: [1, 2, 4], resetReminder: .daily),
+        CounterTemplate(id: "workout", title: "Workout Reps", subtitle: "Sets, reps, or exercises", name: "Workout Reps", group: "Fitness", goal: 100, symbol: "figure.strengthtraining.traditional", color: .green, notes: "", stepValues: [1, 10, 25], resetReminder: .weekly),
+        CounterTemplate(id: "inventory", title: "Inventory", subtitle: "Stock or item tracking", name: "Inventory", group: "Inventory", goal: nil, symbol: "shippingbox.fill", color: .orange, notes: "Use + and − to adjust stock.", stepValues: [1, 5, 20], resetReminder: .monthly),
+        CounterTemplate(id: "score", title: "Game Score", subtitle: "Simple score counter", name: "Player Score", group: "Games", goal: nil, symbol: "gamecontroller.fill", color: .purple, notes: "", stepValues: [1, 2, 3], resetReminder: .none),
+        CounterTemplate(id: "reading", title: "Reading", subtitle: "Pages, chapters, or sessions", name: "Reading", group: "Focus", goal: 50, symbol: "book.fill", color: .purple, notes: "", stepValues: [1, 5, 10], resetReminder: .weekly),
+        CounterTemplate(id: "streak", title: "Streak", subtitle: "Count days or wins", name: "Streak", group: "Habits", goal: nil, symbol: "flame.fill", color: .red, notes: "", stepValues: [1, 7, 30], resetReminder: .daily),
+        CounterTemplate(id: "shopping", title: "Shopping List", subtitle: "Items collected or packed", name: "Items", group: "Shopping", goal: nil, symbol: "cart.fill", color: .teal, notes: "", stepValues: [1, 5, 10], resetReminder: .none)
     ]
 }
 
 struct TallyBackup: Codable {
-    var version: String = "1.3"
-    var exportedAt: Date = Date()
+    var version: String
+    var exportedAt: Date
     var counters: [TallyCounter]
     var history: [TallyHistoryEntry]
     var theme: TallyTheme
+    var sessions: [TallySession]
+
+    init(version: String = "1.4", exportedAt: Date = Date(), counters: [TallyCounter], history: [TallyHistoryEntry], theme: TallyTheme, sessions: [TallySession] = []) {
+        self.version = version
+        self.exportedAt = exportedAt
+        self.counters = counters
+        self.history = history
+        self.theme = theme
+        self.sessions = sessions
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case version, exportedAt, counters, history, theme, sessions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(String.self, forKey: .version) ?? "Unknown"
+        exportedAt = try container.decodeIfPresent(Date.self, forKey: .exportedAt) ?? Date()
+        counters = try container.decode([TallyCounter].self, forKey: .counters)
+        history = try container.decode([TallyHistoryEntry].self, forKey: .history)
+        theme = try container.decodeIfPresent(TallyTheme.self, forKey: .theme) ?? .system
+        sessions = try container.decodeIfPresent([TallySession].self, forKey: .sessions) ?? []
+    }
 }
 
 struct TallyBackupPreview: Identifiable {
@@ -218,5 +303,6 @@ struct TallyBackupPreview: Identifiable {
     let activeCounterCount: Int
     let archivedCounterCount: Int
     let historyCount: Int
+    let sessionCount: Int
     let themeTitle: String
 }
