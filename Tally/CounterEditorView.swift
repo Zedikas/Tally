@@ -17,22 +17,16 @@ struct CounterEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     let mode: CounterEditorMode
-    @State private var name: String = ""
-    @State private var group: String = "General"
-    @State private var goalText: String = ""
-    @State private var symbol: String = "number.circle.fill"
+    @State private var name = ""
+    @State private var group = "General"
+    @State private var goalText = ""
+    @State private var symbol = "number.circle.fill"
     @State private var color: CounterColor = .blue
-    @State private var notes: String = ""
+    @State private var notes = ""
     @State private var stepOneText = "1"
     @State private var stepTwoText = "5"
     @State private var stepThreeText = "10"
     @State private var resetReminder: ResetReminder = .none
-
-    private let symbols = [
-        "number.circle.fill", "checkmark.circle.fill", "drop.fill", "flame.fill", "bolt.fill",
-        "book.fill", "cart.fill", "gamecontroller.fill", "figure.strengthtraining.traditional", "star.fill",
-        "shippingbox.fill", "calendar", "trophy.fill", "timer", "list.bullet.clipboard.fill"
-    ]
 
     var body: some View {
         NavigationStack {
@@ -48,17 +42,12 @@ struct CounterEditorView: View {
                                         .frame(width: 34, height: 34)
                                         .background(template.color.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(template.title)
-                                            .font(.subheadline.weight(.bold))
-                                            .foregroundStyle(.primary)
-                                        Text(template.subtitle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                        Text(template.title).font(.subheadline.weight(.bold)).foregroundStyle(.primary)
+                                        Text(template.subtitle).font(.caption).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                     if templateMatchesCurrent(template) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                                     }
                                 }
                             }
@@ -69,19 +58,16 @@ struct CounterEditorView: View {
 
                 Section("Counter") {
                     TextField("Name", text: $name)
-                    TextField("Group", text: $group)
+                    TextField("Folder", text: $group)
                     TextField("Optional goal", text: $goalText)
                         .keyboardType(.numberPad)
                     TextField("Notes", text: $notes, axis: .vertical)
                 }
 
                 Section("Step Buttons") {
-                    TextField("First step", text: $stepOneText)
-                        .keyboardType(.numberPad)
-                    TextField("Second step", text: $stepTwoText)
-                        .keyboardType(.numberPad)
-                    TextField("Third step", text: $stepThreeText)
-                        .keyboardType(.numberPad)
+                    TextField("First step", text: $stepOneText).keyboardType(.numberPad)
+                    TextField("Second step", text: $stepTwoText).keyboardType(.numberPad)
+                    TextField("Third step", text: $stepThreeText).keyboardType(.numberPad)
                     Text("These become the three positive buttons on the counter card. The −1 button always stays available.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -90,7 +76,8 @@ struct CounterEditorView: View {
                 Section("Reset Reminder") {
                     Picker("Reminder", selection: $resetReminder) {
                         ForEach(ResetReminder.allCases) { reminder in
-                            Label(reminder.title, systemImage: reminder.systemImage).tag(reminder)
+                            Label(reminder.title, systemImage: reminder.v15SystemImage)
+                                .tag(reminder)
                         }
                     }
                     Text(resetReminder.subtitle)
@@ -100,13 +87,21 @@ struct CounterEditorView: View {
 
                 Section("Style") {
                     Picker("Color", selection: $color) {
-                        ForEach(CounterColor.allCases) { color in
-                            Label(color.title, systemImage: "circle.fill").tag(color)
+                        ForEach(CounterColor.allCases) { option in
+                            Label {
+                                Text(option.title).foregroundStyle(option.color)
+                            } icon: {
+                                Image(systemName: "circle.fill").foregroundStyle(option.color)
+                            }
+                            .tag(option)
                         }
                     }
+                    .tint(color.color)
+
                     Picker("Symbol", selection: $symbol) {
-                        ForEach(symbols, id: \.self) { symbol in
-                            Label(symbol, systemImage: symbol).tag(symbol)
+                        ForEach(CounterSymbolOption.all) { option in
+                            Label(option.title, systemImage: option.symbol)
+                                .tag(option.symbol)
                         }
                     }
                 }
