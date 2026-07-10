@@ -6,16 +6,22 @@ Reliable single-target app: counters, groups, history, themes, export, and alter
 
 ## v1.1
 
+Delivered:
+
 - Counter templates
-- Better editing and reordering
-- Import JSON backup
 - Search/filter counters
+- Sort options
+- Duplicate counters
+- Manual up/down counter movement
+- Import JSON backup by merging or replacing data
 
 ## v1.2
 
 - Stats dashboard
 - Daily/weekly summaries
 - Streak counters
+- Better history filters
+- Import preview before replacing data
 
 ## v2.0
 
