@@ -150,8 +150,8 @@ struct AppearanceSettingsView: View {
                         Text("#\(customHex.uppercased())").font(.system(.body, design: .monospaced))
                         Spacer()
                         Button("Use Custom") {
-                            customHex = customColor.hexString() ?? customHex
-                            accentRaw = "custom"
+                            customHex = customColor.hexString()
+                            accentRaw = StoredAccentColor.customValue
                         }.buttonStyle(.borderedProminent)
                     }
                 }
@@ -161,7 +161,7 @@ struct AppearanceSettingsView: View {
         }
         .navigationTitle("Appearance")
         .onAppear { customColor = Color(hex: customHex) ?? .pink }
-        .onChange(of: customColor) { _, value in customHex = value.hexString() ?? customHex }
+        .onChange(of: customColor) { _, value in customHex = value.hexString() }
     }
 }
 
