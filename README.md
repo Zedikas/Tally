@@ -1,44 +1,43 @@
 # Tally
 
-**Tally** is a clean, native SwiftUI multi-counter app for iPhone.
+**Tally** is a native SwiftUI multi-counter app for iPhone built as a reliable single-target project.
 
-It is designed as a polished but reliable app: multiple counters, sessions, collapsible folders, history, stats, safer counter management, export/import, themes, accent colors, and interchangeable app icons without fragile extension targets. The app intentionally stays single-target so it can build and sideload reliably without extension signing files.
+It includes multiple counters, timed sessions, collapsible folders, detailed analytics, history, archive-safe management, export/import, themes, custom accents, and interchangeable app icons without extension-signing requirements.
 
-## Repository description
+## v1.6 features
 
-A polished SwiftUI multi-counter app for iPhone with timed sessions, collapsible folders, exact value entry, goals, stats, archive-safe management, export/import, OLED mode, accent colors, and interchangeable icons.
+- Dedicated detail page for every counter
+- Quick actions, notes, milestones, recent history, and a 30-day activity chart
+- Pin counters into a Favorites section
+- Lock counters against accidental increments, exact-value edits, and resets
+- Folder colors, counter counts, and combined folder totals
+- Smart automatic daily, weekly, or monthly resets when Tally opens
+- Configurable per-counter milestones with celebration history entries
+- Expanded symbol library with readable names
+- Full-page counter, folder-color, and symbol selectors instead of displaced popovers
+- Redesigned Settings with dedicated Appearance and App Icon pages
+- Preset accent themes plus a native custom color picker
+- App icon gallery with larger previews and selection checkmarks
+- Backward-compatible decoding for all v1.0–v1.5 backups
+- JSON backups upgraded to version 1.6
+- Version bump to v1.6 build 8
 
 ## v1.5 features
 
-- Tap a counter’s large value to enter an exact whole number with the numeric keyboard
-- Exact value changes are recorded in History and support Undo
-- Counter groups now behave as collapsible folders
-- Folder expanded/collapsed state is remembered between launches
-- Expand All and Collapse All actions
-- Clear reminder icons: 1 for daily, 7 for weekly, and 30 for monthly
-- Color-picker icons and names are tinted using their actual colors
-- Human-readable symbol names instead of raw SF Symbol identifiers
-- Global accent-color setting inspired by Universal Downloader
-- Accent color applies to tab selection, buttons, pickers, and navigation controls
-- Version bump to v1.5 build 6
-
-## v1.4 features
-
-- New Sessions tab
-- Start timed sessions linked to a counter or as standalone sessions
-- Active session timers update while the Sessions screen is open
-- End sessions with duration, start value, end value, and delta summaries
-- Start or end a linked session directly from a counter card menu
-- Export sessions as CSV
-- JSON backups include sessions
-- Per-counter reset reminder metadata
+- Exact value entry from the counter overview
+- Collapsible folders with remembered state
+- Clear 1, 7, and 30 reset icons
+- Human-readable symbol labels
+- Global accent-color setting
+- True-color picker representation
 
 ## Earlier releases
 
+- **v1.4:** timed sessions, session summaries, CSV export, and reset schedules
 - **v1.3:** archive management, custom step buttons, and import previews
 - **v1.2:** stats dashboard, summaries, streaks, and history filters
 - **v1.1:** search, sorting, templates, duplication, movement, and JSON import
-- **v1.0:** multiple counters, groups, goals, history, exports, themes, and alternate icons
+- **v1.0:** counters, groups, goals, history, exports, themes, and alternate icons
 
 ## Project structure
 
@@ -49,27 +48,15 @@ Tally/
 ├── Scripts/                # Icon generator
 ├── docs/                   # Roadmap and notes
 ├── project.yml             # XcodeGen project spec
-└── .github/workflows/      # Unsigned IPA build workflow
+└── .github/workflows/      # Unsigned IPA workflow
 ```
 
 ## Build locally
 
-Install XcodeGen first:
-
 ```bash
 brew install xcodegen
-```
-
-Generate the icon assets and Xcode project:
-
-```bash
 swift Scripts/generate_icons.swift
 xcodegen generate --spec project.yml
-```
-
-Build the app:
-
-```bash
 xcodebuild \
   -project Tally.xcodeproj \
   -scheme Tally \
@@ -82,22 +69,18 @@ xcodebuild \
 
 ## GitHub Actions IPA build
 
-The workflow builds an unsigned IPA when run manually or when the latest commit message contains:
+The unsigned IPA workflow runs manually or when a commit message contains:
 
 ```text
 (!F)
 ```
 
-The artifact name is:
+The v1.6 artifact is:
 
 ```text
-Tally_v1_5_unsigned_ipa
+Tally_v1_6_unsigned_ipa
 ```
 
-## Icon system
+## Signing boundary
 
-The repo includes a programmatic icon generator instead of committing large binary icon files. The generator creates the primary icon plus Classic Blue, Neon Dark, Glass, Pearl, Amber, Tech Green, Cosmic Purple, and Synthwave alternatives.
-
-## Roadmap
-
-See [`docs/ROADMAP.md`](docs/ROADMAP.md). Widgets, App Intents, Live Activities, Watch support, and other extension targets remain postponed until the required signing assets are available.
+Widgets, App Intents extensions, Live Activities, Watch support, and other extra targets remain postponed until the required bundle identifiers, entitlements, and provisioning assets are available.
