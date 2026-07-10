@@ -42,6 +42,8 @@ jobs:
           swift Scripts/generate_icons.swift
           test -f Tally/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png
           test -f Tally/Resources/AlternateIcons/TallyIconClassicBlue.png
+          test -f Tally/Resources/AlternateIcons/TallyIconClassicBlue@2x.png
+          test -f Tally/Resources/AlternateIcons/TallyIconClassicBlue@3x.png
           ls -lh Tally/Resources/AlternateIcons
 
       - name: Generate Xcode project
