@@ -38,11 +38,23 @@ Delivered:
 
 ## v1.4
 
+Delivered:
+
+- Timed sessions
+- Linked and standalone sessions
+- Active session timers
+- Session summaries with duration and delta
+- Sessions CSV export
+- Sessions included in JSON backup/import
+- Optional reset reminder metadata without extensions
+
+## v1.5
+
 - More detailed history analytics
 - Counter archive search and filters
-- Optional reset reminders without extensions
 - Per-counter notes expansion and pinned counters
 - More counter layout options
+- Better session filtering and editing
 
 ## v2.0
 
