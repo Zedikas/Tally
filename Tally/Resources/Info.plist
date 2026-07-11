@@ -9,8 +9,8 @@
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>Tally</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.7</string>
-	<key>CFBundleVersion</key><string>10</string>
+	<key>CFBundleShortVersionString</key><string>2.0</string>
+	<key>CFBundleVersion</key><string>20</string>
 	<key>CFBundleIconName</key><string>AppIcon</string>
 	<key>CFBundleIcons</key>
 	<dict>
@@ -32,6 +32,28 @@
 			<key>Synthwave</key><dict><key>CFBundleIconFiles</key><array><string>TallyIconSynthwave</string></array><key>UIPrerenderedIcon</key><false/></dict>
 		</dict>
 	</dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key><string>Tally Sync Package</string>
+			<key>CFBundleTypeRole</key><string>Editor</string>
+			<key>LSHandlerRank</key><string>Owner</string>
+			<key>LSItemContentTypes</key><array><string>com.samua.tally.sync</string></array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key><string>com.samua.tally.sync</string>
+			<key>UTTypeDescription</key><string>Tally Sync Package</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key><array><string>tallysync</string></array>
+				<key>public.mime-type</key><string>application/vnd.samua.tally-sync+json</string>
+			</dict>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key><true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key><true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key><true/>
