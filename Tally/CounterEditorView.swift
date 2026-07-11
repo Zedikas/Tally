@@ -17,11 +17,11 @@ struct CounterEditorView: View {
 
     let mode: CounterEditorMode
     @State private var name = ""
-    @State private var group = "General"
+    @State private var selectedFolderName: String?
     @State private var goalText = ""
-    @State private var symbol = "number.circle.fill"
+    @State private var symbol = "number.square.fill"
     @State private var colorRaw = CounterColor.blue.rawValue
-    @State private var folderColorRaw = CounterColor.blue.rawValue
+    @State private var folderColorRaw = CounterColor.gray.rawValue
     @State private var counterCustomColor = Color.blue
     @State private var folderCustomColor = Color.blue
     @State private var showingCounterCustomColor = false
@@ -64,7 +64,32 @@ struct CounterEditorView: View {
 
                 Section("Counter") {
                     TextField("Name", text: $name)
-                    TextField("Folder", text: $group)
+                    Menu {
+                        Button {
+                            selectedFolderName = nil
+                            folderColorRaw = CounterColor.gray.rawValue
+                        } label: {
+                            Label("Unfiled", systemImage: selectedFolderName == nil ? "checkmark" : "tray")
+                        }
+                        if !store.folders.isEmpty { Divider() }
+                        ForEach(store.folders) { folder in
+                            Button {
+                                selectedFolderName = folder.name
+                                applyFolderPresets(folder)
+                            } label: {
+                                Label(folder.name, systemImage: selectedFolderName == folder.name ? "checkmark" : "folder.fill")
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text("Folder").foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: selectedFolderName == nil ? "tray" : "folder.fill")
+                                .foregroundStyle(selectedFolderName.flatMap(store.folder(named:)).map { TallyStoredColor.color($0.colorRaw) } ?? .secondary)
+                            Text(selectedFolderName ?? "Unfiled").foregroundStyle(.secondary)
+                            Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                     TextField("Optional goal", text: $goalText).keyboardType(.numberPad)
                     TextField("Notes", text: $notes, axis: .vertical)
                 }
@@ -90,41 +115,27 @@ struct CounterEditorView: View {
                             Label(reminder.title, systemImage: reminder.systemImage).tag(reminder)
                         }
                     }
-                    Toggle("Reset Automatically", isOn: $automaticResetEnabled)
-                        .disabled(resetReminder == .none)
+                    Toggle("Reset Automatically", isOn: $automaticResetEnabled).disabled(resetReminder == .none)
                     Text(resetReminder.subtitle).font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Milestones") {
-                    TextField("10, 50, 100", text: $milestonesText)
-                        .keyboardType(.numbersAndPunctuation)
+                    TextField("10, 50, 100", text: $milestonesText).keyboardType(.numbersAndPunctuation)
                     Text("Enter milestone values separated by commas. Reaching one adds a celebration entry to History.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Style") {
-                    StoredColorMenu(
-                        title: "Counter Color",
-                        systemImage: "circle.fill",
-                        rawValue: $colorRaw,
-                        customColor: $counterCustomColor,
-                        showingCustomPicker: $showingCounterCustomColor
-                    )
-
-                    StoredColorMenu(
-                        title: "Folder Color",
-                        systemImage: "folder.fill",
-                        rawValue: $folderColorRaw,
-                        customColor: $folderCustomColor,
-                        showingCustomPicker: $showingFolderCustomColor
-                    )
-
+                    StoredColorMenu(title: "Counter Color", systemImage: "circle.fill", rawValue: $colorRaw, customColor: $counterCustomColor, showingCustomPicker: $showingCounterCustomColor)
+                    StoredColorMenu(title: "Folder Color", systemImage: "folder.fill", rawValue: $folderColorRaw, customColor: $folderCustomColor, showingCustomPicker: $showingFolderCustomColor)
+                        .disabled(selectedFolderName != nil)
+                    if selectedFolderName != nil {
+                        Text("The selected folder controls its own folder color.").font(.caption).foregroundStyle(.secondary)
+                    }
                     Menu {
                         ForEach(CounterSymbolOption.all) { option in
-                            Button {
-                                symbol = option.symbol
-                            } label: {
-                                Label(option.title, systemImage: option.symbol == symbol ? "checkmark.circle.fill" : option.symbol)
+                            Button { symbol = option.symbol } label: {
+                                Label(option.title, systemImage: option.symbol)
                             }
                         }
                     } label: {
@@ -146,7 +157,7 @@ struct CounterEditorView: View {
                     Button("Save") { save() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .onAppear(perform: populate)
+            .onAppear { store.ensureFoldersMigrated(); populate() }
             .onChange(of: resetReminder) { _, newValue in if newValue == .none { automaticResetEnabled = false } }
             .sheet(isPresented: $showingCounterCustomColor) {
                 CustomStoredColorSheet(title: "Counter Color", rawValue: $colorRaw, color: $counterCustomColor)
@@ -157,25 +168,19 @@ struct CounterEditorView: View {
         }
     }
 
-    private var title: String {
-        switch mode { case .add: return "New Counter"; case .edit: return "Edit Counter" }
-    }
+    private var title: String { if case .add = mode { return "New Counter" }; return "Edit Counter" }
     private var isAdding: Bool { if case .add = mode { return true }; return false }
-    private var stepValues: [Int] {
-        TallyCounter.sanitizedStepValues([stepOneText, stepTwoText, stepThreeText].compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) })
-    }
-    private var milestones: [Int] {
-        TallyCounter.sanitizedMilestones(milestonesText.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) })
-    }
+    private var stepValues: [Int] { TallyCounter.sanitizedStepValues([stepOneText, stepTwoText, stepThreeText].compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) }
+    private var milestones: [Int] { TallyCounter.sanitizedMilestones(milestonesText.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) }
 
     private func populate() {
         guard case .edit(let counter) = mode else { return }
         name = counter.name
-        group = counter.group
+        selectedFolderName = store.folder(named: counter.displayGroup)?.name
         goalText = counter.goal.map(String.init) ?? ""
         symbol = counter.symbol
         colorRaw = counter.colorName
-        folderColorRaw = counter.folderColorName
+        folderColorRaw = selectedFolderName.flatMap(store.folder(named:))?.colorRaw ?? counter.folderColorName
         counterCustomColor = TallyStoredColor.color(colorRaw)
         folderCustomColor = TallyStoredColor.color(folderColorRaw)
         notes = counter.notes
@@ -189,15 +194,25 @@ struct CounterEditorView: View {
 
     private func apply(_ template: CounterTemplate) {
         name = template.name
-        group = template.group
+        selectedFolderName = store.folder(named: template.group)?.name
         goalText = template.goal.map(String.init) ?? ""
         symbol = template.symbol
         colorRaw = template.color.rawValue
-        folderColorRaw = template.color.rawValue
+        folderColorRaw = selectedFolderName.flatMap(store.folder(named:))?.colorRaw ?? CounterColor.gray.rawValue
         notes = template.notes
         resetReminder = template.resetReminder
         automaticResetEnabled = false
         applyStepValues(template.stepValues)
+    }
+
+    private func applyFolderPresets(_ folder: TallyFolder) {
+        folderColorRaw = folder.colorRaw
+        guard isAdding else { return }
+        colorRaw = folder.defaultCounterColorRaw
+        symbol = folder.defaultSymbol
+        resetReminder = folder.defaultResetReminder
+        automaticResetEnabled = folder.defaultAutomaticReset
+        applyStepValues(folder.defaultStepValues)
     }
 
     private func applyStepValues(_ values: [Int]) {
@@ -208,26 +223,25 @@ struct CounterEditorView: View {
     }
 
     private func templateMatchesCurrent(_ template: CounterTemplate) -> Bool {
-        name == template.name && group == template.group && goalText == (template.goal.map(String.init) ?? "") &&
-        symbol == template.symbol && colorRaw == template.color.rawValue && resetReminder == template.resetReminder &&
-        stepValues == TallyCounter.sanitizedStepValues(template.stepValues)
+        name == template.name && selectedFolderName == store.folder(named: template.group)?.name && goalText == (template.goal.map(String.init) ?? "") && symbol == template.symbol && colorRaw == template.color.rawValue && resetReminder == template.resetReminder && stepValues == TallyCounter.sanitizedStepValues(template.stepValues)
     }
 
     private func save() {
         let goal = Int(goalText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let group = selectedFolderName ?? ""
+        let resolvedFolderColor = selectedFolderName.flatMap(store.folder(named:))?.colorRaw ?? folderColorRaw
         let baseColor = CounterColor(rawValue: colorRaw) ?? .blue
         switch mode {
         case .add:
             if let created = store.addCounter(name: name, group: group, goal: goal, symbol: symbol, color: baseColor, notes: notes, stepValues: stepValues, resetReminder: resetReminder),
                var counter = store.counters.first(where: { $0.id == created.id }) {
                 counter.colorName = colorRaw
-                counter.folderColorName = folderColorRaw
+                counter.folderColorName = resolvedFolderColor
                 counter.isPinned = isPinned
                 counter.isLocked = isLocked
                 counter.automaticResetEnabled = automaticResetEnabled
                 counter.milestones = milestones
                 store.updateCounter(counter)
-                store.updateFolderColor(group: counter.displayGroup, rawValue: folderColorRaw)
             }
         case .edit(var counter):
             counter.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -235,7 +249,7 @@ struct CounterEditorView: View {
             counter.goal = goal
             counter.symbol = symbol
             counter.colorName = colorRaw
-            counter.folderColorName = folderColorRaw
+            counter.folderColorName = resolvedFolderColor
             counter.notes = notes
             counter.stepValues = stepValues
             counter.resetReminder = resetReminder
@@ -244,7 +258,6 @@ struct CounterEditorView: View {
             counter.isLocked = isLocked
             counter.milestones = milestones
             store.updateCounter(counter)
-            store.updateFolderColor(group: counter.displayGroup, rawValue: folderColorRaw)
         }
         dismiss()
     }
