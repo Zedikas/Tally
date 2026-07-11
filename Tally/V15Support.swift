@@ -6,14 +6,14 @@ enum TallyAccentColor: String, CaseIterable, Identifiable {
     var title: String { rawValue.capitalized }
     var color: Color {
         switch self {
-        case .blue: return .blue
-        case .purple: return .purple
-        case .pink: return .pink
-        case .green: return .green
-        case .orange: return .orange
-        case .red: return .red
-        case .teal: return .teal
-        case .indigo: return .indigo
+        case .blue: return Color(hex: "0A84FF") ?? .blue
+        case .purple: return Color(hex: "9000FF") ?? .purple
+        case .pink: return Color(hex: "FF7EFF") ?? .pink
+        case .green: return Color(hex: "30D158") ?? .green
+        case .orange: return Color(hex: "FF9F0A") ?? .orange
+        case .red: return Color(hex: "FF453A") ?? .red
+        case .teal: return Color(hex: "64D2FF") ?? .teal
+        case .indigo: return Color(hex: "5E5CE6") ?? .indigo
         }
     }
 }
@@ -24,8 +24,8 @@ struct CounterSymbolOption: Identifiable, Hashable {
     var id: String { symbol }
 
     static let all: [CounterSymbolOption] = [
-        .init(symbol: "number.circle.fill", title: "Counter"),
-        .init(symbol: "checkmark.circle.fill", title: "Completed"),
+        .init(symbol: "number.square.fill", title: "Counter"),
+        .init(symbol: "checkmark.seal.fill", title: "Completed"),
         .init(symbol: "drop.fill", title: "Water"),
         .init(symbol: "flame.fill", title: "Streak"),
         .init(symbol: "bolt.fill", title: "Energy"),
