@@ -174,6 +174,75 @@ extension TallyStore {
         return "Next reset \(next.formatted(date: .abbreviated, time: .shortened))"
     }
 
+    func performScheduledResets(now: Date = Date()) {
+        let eligibleIDs = counters.compactMap { counter -> UUID? in
+            guard !counter.isArchived,
+                  counter.automaticResetEnabled,
+                  counter.resetReminder != .none else { return nil }
+
+            let reference = counter.lastAutomaticResetAt ?? counter.updatedAt
+            guard let scheduled = mostRecentScheduledReset(for: counter, at: now),
+                  scheduled > reference else { return nil }
+            return counter.id
+        }
+
+        guard !eligibleIDs.isEmpty else { return }
+        registerUndoSnapshot(label: "Automatic Reset")
+        for id in eligibleIDs {
+            guard let index = counters.firstIndex(where: { $0.id == id }) else { continue }
+            let before = counters[index].value
+            let after = resetValue(for: counters[index])
+            counters[index].value = after
+            counters[index].lastAutomaticResetAt = now
+            counters[index].lastResetReason = "Scheduled"
+            counters[index].updatedAt = now
+            history.insert(
+                TallyHistoryEntry(
+                    counterID: id,
+                    counterName: counters[index].name,
+                    action: "Scheduled Reset",
+                    delta: after - before,
+                    beforeValue: before,
+                    afterValue: after,
+                    date: now
+                ),
+                at: 0
+            )
+            scheduleResetNotification(for: counters[index])
+        }
+    }
+
+    private func mostRecentScheduledReset(for counter: TallyCounter, at date: Date) -> Date? {
+        let calendar = Calendar.current
+        switch counter.resetReminder {
+        case .none:
+            return nil
+        case .daily:
+            var components = calendar.dateComponents([.year, .month, .day], from: date)
+            components.hour = counter.resetHour
+            components.minute = counter.resetMinute
+            components.second = 0
+            guard let today = calendar.date(from: components) else { return nil }
+            return today <= date ? today : calendar.date(byAdding: .day, value: -1, to: today)
+        case .weekly:
+            return calendar.nextDate(
+                after: date,
+                matching: DateComponents(weekday: counter.resetWeekday, hour: counter.resetHour, minute: counter.resetMinute),
+                matchingPolicy: .previousTimePreservingSmallerComponents,
+                repeatedTimePolicy: .first,
+                direction: .backward
+            )
+        case .monthly:
+            return calendar.nextDate(
+                after: date,
+                matching: DateComponents(day: counter.resetDayOfMonth, hour: counter.resetHour, minute: counter.resetMinute),
+                matchingPolicy: .previousTimePreservingSmallerComponents,
+                repeatedTimePolicy: .first,
+                direction: .backward
+            )
+        }
+    }
+
     private func notificationDateComponents(for counter: TallyCounter) -> DateComponents {
         let calendar = Calendar.current
         let nextReset = nextResetDate(for: counter) ?? Date()
@@ -208,4 +277,67 @@ struct TallySigningCapability: Identifiable {
         .init(id: "widgets", title: "Widgets and Live Activities", subtitle: "Source-ready, but requires a separately signed extension target.", systemImage: "rectangle.3.group", availableInAppDBBuild: false),
         .init(id: "cloud", title: "Automatic CloudKit sync", subtitle: "Source-ready, but requires iCloud entitlements in the provisioning profile.", systemImage: "icloud", availableInAppDBBuild: false)
     ]
+}
+
+struct TallyOnboardingView: View {
+    @EnvironmentObject private var store: TallyStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var page = 0
+
+    private let pages: [(String, String, String)] = [
+        ("Organize your counters", "Create folders with their own colors, symbols, steps, and reset presets.", "folder.fill.badge.plus"),
+        ("Pin without removing", "Pinned counters remain inside their folder and simply move to the top of that folder.", "pin.fill"),
+        ("AppDB-safe by design", "Local notifications, backups, sync packages, Shortcuts, and all core features work without restricted extension entitlements.", "checkmark.shield.fill")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 28) {
+                Spacer()
+                Image(systemName: pages[page].2)
+                    .font(.system(size: 72, weight: .bold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
+                VStack(spacing: 12) {
+                    Text(pages[page].0)
+                        .font(.largeTitle.weight(.black))
+                        .multilineTextAlignment(.center)
+                    Text(pages[page].1)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 24)
+                Spacer()
+                HStack(spacing: 8) {
+                    ForEach(pages.indices, id: \.self) { index in
+                        Capsule()
+                            .fill(index == page ? Color.accentColor : Color.secondary.opacity(0.25))
+                            .frame(width: index == page ? 24 : 8, height: 8)
+                    }
+                }
+                Button(page == pages.count - 1 ? "Get Started" : "Continue") {
+                    if page == pages.count - 1 {
+                        store.preferences.onboardingCompleted = true
+                        dismiss()
+                    } else {
+                        withAnimation(.snappy) { page += 1 }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                Button("Skip") {
+                    store.preferences.onboardingCompleted = true
+                    dismiss()
+                }
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 18)
+            }
+            .navigationTitle("Welcome to Tally 2.0")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .interactiveDismissDisabled()
+    }
 }
