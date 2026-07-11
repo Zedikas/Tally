@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.6.1 build 9 diagnostic: preserve the complete Xcode log as an artifact.
+# Tally v1.6.1 build 9 retry after fixing RootView and session CSV compiler errors.
 
 on:
   workflow_dispatch:
@@ -56,7 +56,6 @@ jobs:
           xcodegen generate --spec project.yml
 
       - name: Build unsigned app
-        id: build
         shell: bash
         run: |
           set +e
@@ -78,10 +77,9 @@ jobs:
             cat compiler-diagnostics.txt
             echo "===== Final build context ====="
             tail -n 120 build.log
-          else
-            echo "Build succeeded"
+            exit "$status"
           fi
-          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "Build succeeded"
 
       - name: Upload build diagnostics
         if: always()
@@ -93,10 +91,6 @@ jobs:
             compiler-diagnostics.txt
           if-no-files-found: warn
           retention-days: 7
-
-      - name: Stop after failed build
-        if: steps.build.outputs.status != '0'
-        run: exit 1
 
       - name: Patch app metadata and alternate icon files
         run: |
