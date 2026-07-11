@@ -7,7 +7,7 @@ struct TallyApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            TallyMainTabsView()
                 .environmentObject(store)
                 .preferredColorScheme(store.theme.colorScheme)
                 .onAppear {
