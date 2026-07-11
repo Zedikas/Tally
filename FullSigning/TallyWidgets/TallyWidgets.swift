@@ -112,12 +112,12 @@ struct TallyCounterWidgetView: View {
                     }
                     HStack(spacing: 8) {
                         Button(intent: TallyExtensionIncrementIntent(counterID: counter.id.uuidString, amount: 1)) {
-                            Label("+1", systemImage: "plus").labelStyle(.titleOnly)
+                            Text("+1")
                         }
                         .buttonStyle(.borderedProminent)
 
                         Button(intent: TallyExtensionIncrementIntent(counterID: counter.id.uuidString, amount: 5)) {
-                            Label("+5", systemImage: "plus").labelStyle(.titleOnly)
+                            Text("+5")
                         }
                         .buttonStyle(.bordered)
                     }
@@ -204,6 +204,44 @@ struct TallySessionLiveActivity: Widget {
                 if let value = context.state.counterValue {
                     Text("Counter: \(value)").font(.caption.weight(.semibold))
                 }
+                HStack(spacing: 10) {
+                    Button(
+                        intent: TallyExtensionSessionActionIntent(
+                            sessionID: context.attributes.sessionID.uuidString,
+                            command: "toggle"
+                        )
+                    ) {
+                        Label(
+                            context.state.isPaused ? "Resume" : "Pause",
+                            systemImage: context.state.isPaused ? "play.fill" : "pause.fill"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+
+                    if context.state.counterValue != nil {
+                        Button(
+                            intent: TallyExtensionSessionActionIntent(
+                                sessionID: context.attributes.sessionID.uuidString,
+                                command: "increment",
+                                amount: 1
+                            )
+                        ) {
+                            Label("+1", systemImage: "plus")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    Button(
+                        intent: TallyExtensionSessionActionIntent(
+                            sessionID: context.attributes.sessionID.uuidString,
+                            command: "end"
+                        )
+                    ) {
+                        Label("Finish", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .font(.caption.weight(.semibold))
             }
             .padding()
             .activityBackgroundTint(.black.opacity(0.82))
@@ -220,10 +258,42 @@ struct TallySessionLiveActivity: Widget {
                     Text(context.attributes.title).font(.headline).lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack {
-                        Text(context.attributes.counterName).foregroundStyle(.secondary)
-                        Spacer()
-                        if let value = context.state.counterValue { Text("\(value)").bold() }
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text(context.attributes.counterName).foregroundStyle(.secondary)
+                            Spacer()
+                            if let value = context.state.counterValue { Text("\(value)").bold() }
+                        }
+                        HStack(spacing: 10) {
+                            Button(
+                                intent: TallyExtensionSessionActionIntent(
+                                    sessionID: context.attributes.sessionID.uuidString,
+                                    command: "toggle"
+                                )
+                            ) {
+                                Image(systemName: context.state.isPaused ? "play.fill" : "pause.fill")
+                            }
+                            if context.state.counterValue != nil {
+                                Button(
+                                    intent: TallyExtensionSessionActionIntent(
+                                        sessionID: context.attributes.sessionID.uuidString,
+                                        command: "increment",
+                                        amount: 1
+                                    )
+                                ) {
+                                    Text("+1")
+                                }
+                            }
+                            Button(
+                                intent: TallyExtensionSessionActionIntent(
+                                    sessionID: context.attributes.sessionID.uuidString,
+                                    command: "end"
+                                )
+                            ) {
+                                Image(systemName: "stop.fill")
+                            }
+                        }
+                        .buttonStyle(.bordered)
                     }
                 }
             } compactLeading: {
