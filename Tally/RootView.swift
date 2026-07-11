@@ -4,6 +4,7 @@ struct RootView: View {
     @EnvironmentObject private var store: TallyStore
     @AppStorage(StoredAccentColor.presetKey) private var accentColorRaw = TallyAccentColor.blue.rawValue
     @AppStorage(StoredAccentColor.customKey) private var customAccentHex = "FF1883"
+    @State private var showingOnboarding = false
 
     var body: some View {
         TabView {
@@ -17,7 +18,13 @@ struct RootView: View {
         .background { if store.theme == .oled { Color.black.ignoresSafeArea() } }
         .task {
             store.ensureFoldersMigrated()
-            store.performAutomaticResets()
+            store.performScheduledResets()
+            store.rescheduleAllResetNotifications()
+            if !store.preferences.onboardingCompleted { showingOnboarding = true }
+        }
+        .sheet(isPresented: $showingOnboarding) {
+            TallyOnboardingView()
+                .environmentObject(store)
         }
     }
 }
@@ -27,11 +34,11 @@ struct CountersView: View {
     @State private var showingAddCounter = false
     @State private var showingAddFolder = false
     @State private var editingFolder: TallyFolder?
-    @State private var quickTimerFolder: TallyFolder?
+    @State private var quickCreateFolder: TallyFolder?
     @State private var searchText = ""
     @State private var sort: CounterSort = .manual
     @State private var exactValueCounter: TallyCounter?
-    @AppStorage("tally.collapsedFolders.v17") private var collapsedFoldersRaw = ""
+    @AppStorage("tally.collapsedFolders.v17") private var legacyCollapsedFoldersRaw = ""
 
     var body: some View {
         NavigationStack {
@@ -40,7 +47,6 @@ struct CountersView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         quickStats
-                        if !pinnedCounters.isEmpty { favoritesSection }
 
                         ForEach(visibleFolders) { folder in
                             folderSection(folder)
@@ -67,8 +73,10 @@ struct CountersView: View {
             .searchable(text: $searchText, prompt: "Search counters and folders")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { store.undoLastAction() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
-                        .disabled(store.history.isEmpty)
+                    Button { store.undoLastAction() } label: {
+                        Label(store.undoLabel.map { "Undo \($0)" } ?? "Undo", systemImage: "arrow.uturn.backward")
+                    }
+                    .disabled(!store.canUndo)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu {
@@ -78,10 +86,8 @@ struct CountersView: View {
                             }
                         }
                         Divider()
-                        Button("Expand All", systemImage: "rectangle.expand.vertical") { collapsedFoldersRaw = "" }
-                        Button("Collapse All", systemImage: "rectangle.compress.vertical") {
-                            collapsedFoldersRaw = store.folders.map(\.id.uuidString).joined(separator: "\n")
-                        }
+                        Button("Expand All", systemImage: "rectangle.expand.vertical") { setAllCollapsed(false) }
+                        Button("Collapse All", systemImage: "rectangle.compress.vertical") { setAllCollapsed(true) }
                     } label: { Label("Sort", systemImage: "arrow.up.arrow.down.circle") }
 
                     Menu {
@@ -93,19 +99,9 @@ struct CountersView: View {
             .sheet(isPresented: $showingAddCounter) { CounterEditorView(mode: .add) }
             .sheet(isPresented: $showingAddFolder) { FolderEditorView() }
             .sheet(item: $editingFolder) { FolderEditorView(existing: $0) }
-            .sheet(item: $quickTimerFolder) { QuickFolderTimerSheet(folder: $0) }
+            .sheet(item: $quickCreateFolder) { QuickFolderCreateSheet(folder: $0) }
             .sheet(item: $exactValueCounter) { ExactValueEditor(counter: $0) }
             .task { store.ensureFoldersMigrated() }
-        }
-    }
-
-    private var favoritesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Favorites", systemImage: "pin.fill")
-                .font(.headline.weight(.heavy)).padding(.horizontal)
-            ForEach(pinnedCounters) { counter in
-                draggableCard(counter)
-            }
         }
     }
 
@@ -130,15 +126,15 @@ struct CountersView: View {
 
                 Spacer()
 
-                Button { quickTimerFolder = folder } label: {
-                    Image(systemName: "timer.circle.fill")
+                Button { quickCreateFolder = folder } label: {
+                    Image(systemName: "plus.circle.fill")
                         .font(.title2).foregroundStyle(tint)
                 }
-                .accessibilityLabel("Quick timer in \(folder.name)")
+                .accessibilityLabel("Quick Create in \(folder.name)")
 
                 Menu {
                     Button("Edit Folder", systemImage: "pencil") { editingFolder = folder }
-                    Button("Quick Timer", systemImage: "timer") { quickTimerFolder = folder }
+                    Button("Quick Create", systemImage: "plus.circle") { quickCreateFolder = folder }
                     Divider()
                     Button("Delete Folder", systemImage: "trash", role: .destructive) {
                         store.deleteFolder(folder, keepCounters: true)
@@ -151,11 +147,18 @@ struct CountersView: View {
                     .font(.caption.weight(.bold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal)
+            .draggable("folder:\(folder.id.uuidString)") {
+                Label(folder.name, systemImage: "folder.fill")
+                    .padding(12)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            }
 
             if !isCollapsed(folder) {
-                ForEach(items.filter { !$0.isPinned }) { counter in draggableCard(counter) }
+                ForEach(items) { counter in
+                    draggableCard(counter, targetFolder: folder)
+                }
                 if items.isEmpty {
-                    Text("Drop a counter here or use the timer button.")
+                    Text("Drop a counter here or use Quick Create.")
                         .font(.caption).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).padding(.vertical, 18)
                         .background(tint.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
@@ -166,12 +169,9 @@ struct CountersView: View {
         .padding(.vertical, 4)
         .background(tint.opacity(0.035), in: RoundedRectangle(cornerRadius: 24))
         .dropDestination(for: String.self) { values, _ in
-            guard let raw = values.first, let id = UUID(uuidString: raw),
-                  let counter = store.counters.first(where: { $0.id == id }) else { return false }
-            store.moveCounter(counter, to: folder)
-            return true
+            handleDrop(values, onto: folder)
         }
-        .animation(.snappy, value: isCollapsed(folder))
+        .animation(store.preferences.reducedAnimations ? nil : .snappy, value: isCollapsed(folder))
     }
 
     private var unfiledSection: some View {
@@ -185,7 +185,9 @@ struct CountersView: View {
             }
             .padding(.horizontal)
 
-            ForEach(unfiledCounters.filter { !$0.isPinned }) { counter in draggableCard(counter) }
+            ForEach(unfiledCounters) { counter in
+                draggableCard(counter, targetFolder: nil)
+            }
 
             if unfiledCounters.isEmpty {
                 RoundedRectangle(cornerRadius: 18)
@@ -196,35 +198,83 @@ struct CountersView: View {
             }
         }
         .dropDestination(for: String.self) { values, _ in
-            guard let raw = values.first, let id = UUID(uuidString: raw),
-                  let counter = store.counters.first(where: { $0.id == id }) else { return false }
+            guard let payload = values.first,
+                  let counter = counter(from: payload) else { return false }
             store.moveCounter(counter, to: nil)
             return true
         }
     }
 
-    private func draggableCard(_ counter: TallyCounter) -> some View {
+    private func draggableCard(_ counter: TallyCounter, targetFolder: TallyFolder?) -> some View {
         CounterCard(counter: counter) { exactValueCounter = counter }
             .padding(.horizontal)
-            .draggable(counter.id.uuidString) {
+            .draggable("counter:\(counter.id.uuidString)") {
                 HStack(spacing: 8) {
                     Image(systemName: counter.symbol)
                     Text(counter.name).fontWeight(.semibold)
+                    if counter.isPinned { Image(systemName: "pin.fill") }
                 }
                 .padding(12)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
             }
+            .dropDestination(for: String.self) { values, _ in
+                guard sort == .manual,
+                      let payload = values.first,
+                      let source = self.counter(from: payload),
+                      source.id != counter.id else { return false }
+                store.moveCounter(source, before: counter, to: targetFolder)
+                return true
+            }
     }
 
-    private var collapsedFolders: Set<String> {
-        Set(collapsedFoldersRaw.split(separator: "\n").map(String.init))
+    private func handleDrop(_ values: [String], onto folder: TallyFolder) -> Bool {
+        guard let payload = values.first else { return false }
+        if let sourceCounter = counter(from: payload) {
+            store.moveCounter(sourceCounter, to: folder)
+            return true
+        }
+        if let sourceFolder = folder(from: payload), sourceFolder.id != folder.id {
+            store.moveFolder(sourceFolder, before: folder)
+            return true
+        }
+        return false
     }
-    private func isCollapsed(_ folder: TallyFolder) -> Bool { collapsedFolders.contains(folder.id.uuidString) }
+
+    private func counter(from payload: String) -> TallyCounter? {
+        let raw = payload.hasPrefix("counter:") ? String(payload.dropFirst("counter:".count)) : payload
+        guard let id = UUID(uuidString: raw) else { return nil }
+        return store.counters.first { $0.id == id }
+    }
+
+    private func folder(from payload: String) -> TallyFolder? {
+        guard payload.hasPrefix("folder:"),
+              let id = UUID(uuidString: String(payload.dropFirst("folder:".count))) else { return nil }
+        return store.folder(id: id)
+    }
+
+    private var collapsedFolderIDs: Set<UUID> {
+        var values = Set(store.preferences.collapsedFolderIDs)
+        for raw in legacyCollapsedFoldersRaw.split(separator: "\n") {
+            if let id = UUID(uuidString: String(raw)) { values.insert(id) }
+        }
+        return values
+    }
+
+    private func isCollapsed(_ folder: TallyFolder) -> Bool {
+        collapsedFolderIDs.contains(folder.id)
+    }
+
     private func toggleFolder(_ folder: TallyFolder) {
-        var values = collapsedFolders
-        if values.contains(folder.id.uuidString) { values.remove(folder.id.uuidString) }
-        else { values.insert(folder.id.uuidString) }
-        collapsedFoldersRaw = values.sorted().joined(separator: "\n")
+        var values = collapsedFolderIDs
+        if values.contains(folder.id) { values.remove(folder.id) }
+        else { values.insert(folder.id) }
+        store.preferences.collapsedFolderIDs = Array(values)
+        legacyCollapsedFoldersRaw = ""
+    }
+
+    private func setAllCollapsed(_ collapsed: Bool) {
+        store.preferences.collapsedFolderIDs = collapsed ? store.folders.map(\.id) : []
+        legacyCollapsedFoldersRaw = ""
     }
 
     private var visibleCounters: [TallyCounter] {
@@ -234,31 +284,46 @@ struct CountersView: View {
             $0.displayGroup.localizedCaseInsensitiveContains(trimmed) ||
             $0.notes.localizedCaseInsensitiveContains(trimmed)
         }
-        switch sort {
-        case .manual: return filtered
-        case .recent: return filtered.sorted { $0.updatedAt > $1.updatedAt }
-        case .name: return filtered.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        case .value: return filtered.sorted { $0.value > $1.value }
-        }
+        return sortCounters(filtered)
     }
 
     private var visibleFolders: [TallyFolder] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return store.folders }
-        return store.folders.filter { folder in
-            folder.name.localizedCaseInsensitiveContains(trimmed) || visibleCounters.contains { $0.displayGroup == folder.name }
+        let values = trimmed.isEmpty ? store.folders : store.folders.filter { folder in
+            folder.name.localizedCaseInsensitiveContains(trimmed) || visibleCounters.contains { counter in
+                counter.folderID == folder.id || counter.group.localizedCaseInsensitiveCompare(folder.name) == .orderedSame
+            }
         }
+        return values.sorted { $0.sortIndex < $1.sortIndex }
     }
-    private var knownFolderNames: Set<String> { Set(store.folders.map { $0.name.lowercased() }) }
+
     private var unfiledCounters: [TallyCounter] {
-        visibleCounters.filter { counter in
-            let raw = counter.group.trimmingCharacters(in: .whitespacesAndNewlines)
-            return raw.isEmpty || !knownFolderNames.contains(raw.lowercased())
-        }
+        sortCounters(visibleCounters.filter { counter in
+            counter.folderID == nil || store.folder(id: counter.folderID) == nil
+        })
     }
-    private var pinnedCounters: [TallyCounter] { visibleCounters.filter(\.isPinned) }
+
     private func counters(in folder: TallyFolder) -> [TallyCounter] {
-        visibleCounters.filter { $0.displayGroup.localizedCaseInsensitiveCompare(folder.name) == .orderedSame }
+        sortCounters(visibleCounters.filter {
+            $0.folderID == folder.id || ($0.folderID == nil && $0.group.localizedCaseInsensitiveCompare(folder.name) == .orderedSame)
+        })
+    }
+
+    private func sortCounters(_ values: [TallyCounter]) -> [TallyCounter] {
+        values.sorted { lhs, rhs in
+            if lhs.isPinned != rhs.isPinned { return lhs.isPinned && !rhs.isPinned }
+            switch sort {
+            case .manual:
+                if lhs.sortIndex == rhs.sortIndex { return lhs.createdAt < rhs.createdAt }
+                return lhs.sortIndex < rhs.sortIndex
+            case .recent:
+                return lhs.updatedAt > rhs.updatedAt
+            case .name:
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            case .value:
+                return lhs.value > rhs.value
+            }
+        }
     }
 
     private var background: some View {
@@ -307,6 +372,7 @@ struct CounterCard: View {
     @State private var showingDeleteConfirmation = false
 
     private var color: Color { TallyStoredColor.color(counter.colorName) }
+    private var activeSession: TallySession? { store.activeSession(for: counter) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -324,6 +390,10 @@ struct CounterCard: View {
                                 Text(counter.name).font(.headline.weight(.heavy)).foregroundStyle(.primary)
                                 if counter.isPinned { Image(systemName: "pin.fill").font(.caption) }
                                 if counter.isLocked { Image(systemName: "lock.fill").font(.caption) }
+                                if let session = activeSession {
+                                    Image(systemName: session.isPaused ? "pause.circle.fill" : "timer.circle.fill")
+                                        .font(.caption).foregroundStyle(.orange)
+                                }
                             }
                             if let goal = counter.goal, goal > 0 {
                                 Text("Goal: \(counter.value) / \(goal)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -331,7 +401,7 @@ struct CounterCard: View {
                                 Text(counter.notes).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
                             if counter.resetReminder != .none {
-                                Label(counter.automaticResetEnabled ? "Auto \(counter.resetReminder.title)" : counter.resetReminder.title, systemImage: counter.resetReminder.systemImage)
+                                Label(store.resetScheduleDescription(for: counter), systemImage: counter.resetReminder.systemImage)
                                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             }
                         }
@@ -343,16 +413,28 @@ struct CounterCard: View {
                 }.buttonStyle(.plain).disabled(counter.isLocked)
             }
             if let progress = counter.progress { ProgressView(value: progress).tint(color) }
+            if let session = activeSession, let progress = session.progress {
+                ProgressView(value: progress).tint(.orange)
+            }
             HStack(spacing: 8) {
                 StepButton(title: "−1", isDisabled: counter.isLocked) { store.safeAdjust(counter, by: -1) }
                 ForEach(counter.stepValues, id: \.self) { step in
                     StepButton(title: "+\(step)", isDisabled: counter.isLocked) { store.safeAdjust(counter, by: step) }
                 }
                 Menu {
-                    Button(counter.isPinned ? "Unpin" : "Pin", systemImage: counter.isPinned ? "pin.slash" : "pin") { store.togglePinned(counter) }
-                    Button(counter.isLocked ? "Unlock" : "Lock", systemImage: counter.isLocked ? "lock.open" : "lock") { store.toggleLocked(counter) }
+                    Button(counter.isPinned ? "Unpin" : "Pin in Folder", systemImage: counter.isPinned ? "pin.slash" : "pin") {
+                        store.togglePinned(counter)
+                    }
+                    Button(counter.isLocked ? "Unlock" : "Lock", systemImage: counter.isLocked ? "lock.open" : "lock") {
+                        store.toggleLocked(counter)
+                    }
                     Button("Exact Value", systemImage: "number.square") { onEditExactValue() }.disabled(counter.isLocked)
-                    if let session = store.activeSession(for: counter) {
+                    if let session = activeSession {
+                        if session.isPaused {
+                            Button("Resume Session", systemImage: "play.circle") { store.resumeSession(session) }
+                        } else {
+                            Button("Pause Session", systemImage: "pause.circle") { store.pauseSession(session) }
+                        }
                         Button("End Session", systemImage: "stop.circle") { store.endSession(session) }
                     } else {
                         Button("Start Session", systemImage: "timer") { store.startSession(counterID: counter.id, title: counter.name, notes: "") }
@@ -388,9 +470,9 @@ struct CounterCard: View {
             Button("Archive Counter", role: .destructive) { store.archiveCounter(counter) }
         }
         .confirmationDialog("Delete \(counter.name) permanently?", isPresented: $showingDeleteConfirmation) {
-            Button("Delete Forever", role: .destructive) { store.permanentlyDeleteCounter(counter) }
+            Button("Delete", role: .destructive) { store.permanentlyDeleteCounter(counter) }
         } message: {
-            Text("This removes the counter, its history, and linked sessions. This cannot be undone.")
+            Text("This removes the counter, history, and linked sessions. You can use Undo until the app closes.")
         }
         .sheet(isPresented: $showingEdit) { CounterEditorView(mode: .edit(counter)) }
     }
