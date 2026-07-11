@@ -1,0 +1,8 @@
+{
+  "version": "2.0",
+  "build": 20,
+  "schema": "2.0",
+  "configuration": "AppDB-safe",
+  "entitlementDependentFeatures": "Available through project-full.yml",
+  "pinBehavior": "Pinned counters remain at the top of their assigned folder"
+}
