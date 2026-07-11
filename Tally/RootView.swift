@@ -14,7 +14,11 @@ struct RootView: View {
             SettingsView().tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
         .tint(StoredAccentColor.resolve(accentColorRaw, customHex: customAccentHex))
-        .background(store.theme == .oled ? Color.black.ignoresSafeArea() : Color.clear)
+        .background {
+            if store.theme == .oled {
+                Color.black.ignoresSafeArea()
+            }
+        }
         .task { store.performAutomaticResets() }
     }
 }
