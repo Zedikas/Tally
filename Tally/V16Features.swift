@@ -49,14 +49,18 @@ extension Color {
 extension TallyStore {
     func togglePinned(_ counter: TallyCounter) {
         guard let index = counters.firstIndex(where: { $0.id == counter.id }) else { return }
+        registerUndoSnapshot(label: counters[index].isPinned ? "Unpin Counter" : "Pin Counter")
         counters[index].isPinned.toggle()
         counters[index].updatedAt = Date()
+        performHaptic(.selection)
     }
 
     func toggleLocked(_ counter: TallyCounter) {
         guard let index = counters.firstIndex(where: { $0.id == counter.id }) else { return }
+        registerUndoSnapshot(label: counters[index].isLocked ? "Unlock Counter" : "Lock Counter")
         counters[index].isLocked.toggle()
         counters[index].updatedAt = Date()
+        performHaptic(.selection)
     }
 
     func safeAdjust(_ counter: TallyCounter, by delta: Int) {
@@ -74,59 +78,24 @@ extension TallyStore {
     func safeSetExactValue(_ counter: TallyCounter, to value: Int) {
         guard let current = counters.first(where: { $0.id == counter.id }), !current.isLocked else { return }
         let before = current.value
+        registerUndoSnapshot(label: "Set Exact Value")
         setExactValue(current, to: value)
         registerMilestones(counterID: current.id, before: before, after: value)
+        performHaptic(.selection)
     }
 
+    /// Compatibility entry point retained for earlier call sites.
     func performAutomaticResets(now: Date = Date()) {
-        let calendar = Calendar.current
-        for index in counters.indices where !counters[index].isArchived && counters[index].automaticResetEnabled && counters[index].resetReminder != .none {
-            let counter = counters[index]
-            let reference = counter.lastAutomaticResetAt ?? counter.updatedAt
-            let shouldReset: Bool
-
-            switch counter.resetReminder {
-            case .none:
-                shouldReset = false
-            case .daily:
-                shouldReset = !calendar.isDate(reference, inSameDayAs: now)
-            case .weekly:
-                shouldReset = calendar.component(.weekOfYear, from: reference) != calendar.component(.weekOfYear, from: now) ||
-                    calendar.component(.yearForWeekOfYear, from: reference) != calendar.component(.yearForWeekOfYear, from: now)
-            case .monthly:
-                shouldReset = calendar.component(.month, from: reference) != calendar.component(.month, from: now) ||
-                    calendar.component(.year, from: reference) != calendar.component(.year, from: now)
-            }
-
-            guard shouldReset else { continue }
-            let before = counters[index].value
-            counters[index].value = 0
-            counters[index].lastAutomaticResetAt = now
-            counters[index].updatedAt = now
-            history.insert(
-                TallyHistoryEntry(
-                    counterID: counter.id,
-                    counterName: counter.name,
-                    action: "Automatic Reset",
-                    delta: -before,
-                    beforeValue: before,
-                    afterValue: 0,
-                    date: now
-                ),
-                at: 0
-            )
-        }
+        performScheduledResets(now: now)
     }
 
     func updateFolderColor(group: String, color: CounterColor) {
-        for index in counters.indices where counters[index].displayGroup == group {
-            counters[index].folderColorName = color.rawValue
-        }
+        updateFolderColor(group: group, rawValue: color.rawValue)
     }
 
     func folderColor(for group: String) -> CounterColor {
-        guard let raw = counters.first(where: { $0.displayGroup == group })?.folderColorName else { return .gray }
-        return CounterColor(rawValue: raw) ?? .gray
+        let raw = folder(named: group)?.colorRaw ?? counters.first(where: { $0.displayGroup == group })?.folderColorName
+        return raw.flatMap(CounterColor.init(rawValue:)) ?? .gray
     }
 
     private func registerMilestones(counterID: UUID, before: Int, after: Int) {
@@ -152,6 +121,7 @@ extension TallyStore {
                 at: 0
             )
         }
+        performHaptic(.success)
     }
 }
 
@@ -170,17 +140,11 @@ struct CounterColorSelectionView: View {
                     dismiss()
                 } label: {
                     HStack(spacing: 14) {
-                        Circle()
-                            .fill(option.color)
-                            .frame(width: 28, height: 28)
-                        Text(option.title)
-                            .font(.headline)
-                            .foregroundStyle(option.color)
+                        Circle().fill(option.color).frame(width: 28, height: 28)
+                        Text(option.title).font(.headline).foregroundStyle(option.color)
                         Spacer()
                         if selection == option {
-                            Image(systemName: "checkmark")
-                                .font(.headline)
-                                .foregroundStyle(option.color)
+                            Image(systemName: "checkmark").font(.headline).foregroundStyle(option.color)
                         }
                     }
                     .padding(.vertical, 5)
@@ -205,15 +169,10 @@ struct SymbolSelectionView: View {
                     dismiss()
                 } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: option.symbol)
-                            .font(.title3)
-                            .frame(width: 32)
-                        Text(option.title)
-                            .font(.headline)
+                        Image(systemName: option.symbol).font(.title3).frame(width: 32)
+                        Text(option.title).font(.headline)
                         Spacer()
-                        if selection == option.symbol {
-                            Image(systemName: "checkmark")
-                        }
+                        if selection == option.symbol { Image(systemName: "checkmark") }
                     }
                     .padding(.vertical, 5)
                 }
@@ -270,25 +229,31 @@ struct CounterDetailView: View {
                 .navigationTitle(counter.name)
                 .toolbar {
                     Menu {
-                        Button(counter.isPinned ? "Unpin" : "Pin", systemImage: counter.isPinned ? "pin.slash" : "pin") {
+                        Button(counter.isPinned ? "Unpin" : "Pin in Folder", systemImage: counter.isPinned ? "pin.slash" : "pin") {
                             store.togglePinned(counter)
                         }
                         Button(counter.isLocked ? "Unlock" : "Lock", systemImage: counter.isLocked ? "lock.open" : "lock") {
                             store.toggleLocked(counter)
                         }
-                        Button("Edit", systemImage: "pencil") {
-                            showingEdit = true
+                        if let session = store.activeSession(for: counter) {
+                            if session.isPaused {
+                                Button("Resume Session", systemImage: "play.circle") { store.resumeSession(session) }
+                            } else {
+                                Button("Pause Session", systemImage: "pause.circle") { store.pauseSession(session) }
+                            }
+                            Button("End Session", systemImage: "stop.circle") { store.endSession(session) }
+                        } else {
+                            Button("Start Session", systemImage: "timer") {
+                                store.startSession(counterID: counter.id, title: counter.name, notes: "")
+                            }
                         }
+                        Button("Edit", systemImage: "pencil") { showingEdit = true }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
                 }
-                .sheet(isPresented: $showingEdit) {
-                    CounterEditorView(mode: .edit(counter))
-                }
-                .sheet(item: $exactCounter) {
-                    ExactValueEditor(counter: $0)
-                }
+                .sheet(isPresented: $showingEdit) { CounterEditorView(mode: .edit(counter)) }
+                .sheet(item: $exactCounter) { ExactValueEditor(counter: $0) }
             } else {
                 ContentUnavailableView("Counter Unavailable", systemImage: "number.circle")
             }
@@ -296,13 +261,16 @@ struct CounterDetailView: View {
     }
 
     private func detailHeader(_ counter: TallyCounter) -> some View {
-        let tint = (CounterColor(rawValue: counter.colorName) ?? .blue).color
+        let tint = TallyStoredColor.color(counter.colorName)
         return VStack(spacing: 12) {
             HStack {
-                Image(systemName: counter.symbol)
-                    .font(.largeTitle)
+                Image(systemName: counter.symbol).font(.largeTitle)
                 if counter.isPinned { Image(systemName: "pin.fill") }
                 if counter.isLocked { Image(systemName: "lock.fill") }
+                if let session = store.activeSession(for: counter) {
+                    Image(systemName: session.isPaused ? "pause.circle.fill" : "timer.circle.fill")
+                        .foregroundStyle(.orange)
+                }
             }
             .foregroundStyle(tint)
 
@@ -318,16 +286,17 @@ struct CounterDetailView: View {
             .disabled(counter.isLocked)
 
             if let goal = counter.goal, goal > 0 {
-                Text("Goal \(counter.value) / \(goal)")
-                    .foregroundStyle(.secondary)
-                ProgressView(value: counter.progress ?? 0)
-                    .tint(tint)
+                Text("Goal \(counter.value) / \(goal)").foregroundStyle(.secondary)
+                ProgressView(value: counter.progress ?? 0).tint(tint)
             }
 
-            if counter.automaticResetEnabled {
-                Label("Automatic \(counter.resetReminder.title) reset", systemImage: counter.resetReminder.systemImage)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            if counter.resetReminder != .none {
+                Label(store.resetScheduleDescription(for: counter), systemImage: counter.resetReminder.systemImage)
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                if let lastReset = counter.lastAutomaticResetAt {
+                    Text("Last reset \(lastReset.formatted(date: .abbreviated, time: .shortened)) • \(counter.lastResetReason ?? "Reset")")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
             }
         }
         .padding(22)
@@ -359,8 +328,7 @@ struct CounterDetailView: View {
 
     private var activityChart: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Activity")
-                .font(.headline)
+            Text("Activity").font(.headline)
             Chart(daily.suffix(30)) { point in
                 BarMark(
                     x: .value("Day", point.date, unit: .day),
@@ -375,12 +343,9 @@ struct CounterDetailView: View {
 
     private func milestones(_ counter: TallyCounter) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Milestones")
-                .font(.headline)
-
+            Text("Milestones").font(.headline)
             if counter.milestones.isEmpty {
-                Text("No milestones configured")
-                    .foregroundStyle(.secondary)
+                Text("No milestones configured").foregroundStyle(.secondary)
             } else {
                 ForEach(counter.milestones, id: \.self) { milestone in
                     HStack {
@@ -390,8 +355,7 @@ struct CounterDetailView: View {
                         )
                         Spacer()
                         if counter.reachedMilestones.contains(milestone) {
-                            Text("Reached")
-                                .foregroundStyle(.green)
+                            Text("Reached").foregroundStyle(.green)
                         }
                     }
                 }
@@ -404,8 +368,7 @@ struct CounterDetailView: View {
 
     private func notes(_ counter: TallyCounter) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Notes")
-                .font(.headline)
+            Text("Notes").font(.headline)
             Text(counter.notes.isEmpty ? "No notes" : counter.notes)
                 .foregroundStyle(counter.notes.isEmpty ? .secondary : .primary)
         }
@@ -416,28 +379,20 @@ struct CounterDetailView: View {
 
     private var recentHistory: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Recent History")
-                .font(.headline)
-
+            Text("Recent History").font(.headline)
             if entries.isEmpty {
-                Text("No history yet")
-                    .foregroundStyle(.secondary)
+                Text("No history yet").foregroundStyle(.secondary)
             } else {
                 ForEach(entries.prefix(10)) { entry in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(entry.action)
-                            Text(entry.date, style: .date)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            Text(entry.date, style: .date).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text("\(entry.beforeValue) → \(entry.afterValue)")
-                            .monospacedDigit()
+                        Text("\(entry.beforeValue) → \(entry.afterValue)").monospacedDigit()
                     }
-                    if entry.id != entries.prefix(10).last?.id {
-                        Divider()
-                    }
+                    if entry.id != entries.prefix(10).last?.id { Divider() }
                 }
             }
         }
@@ -462,12 +417,8 @@ struct DetailMetric: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title2.bold())
-                .monospacedDigit()
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.title2.bold()).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
