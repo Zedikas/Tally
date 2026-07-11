@@ -14,35 +14,24 @@ struct RootView: View {
             SettingsView().tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
         .tint(StoredAccentColor.resolve(accentColorRaw, customHex: customAccentHex))
-        .background {
-            if store.theme == .oled {
-                Color.black.ignoresSafeArea()
-            }
+        .background { if store.theme == .oled { Color.black.ignoresSafeArea() } }
+        .task {
+            store.ensureFoldersMigrated()
+            store.performAutomaticResets()
         }
-        .task { store.performAutomaticResets() }
     }
 }
 
 struct CountersView: View {
     @EnvironmentObject private var store: TallyStore
-    @State private var showingAdd = false
+    @State private var showingAddCounter = false
+    @State private var showingAddFolder = false
+    @State private var editingFolder: TallyFolder?
+    @State private var quickTimerFolder: TallyFolder?
     @State private var searchText = ""
     @State private var sort: CounterSort = .manual
     @State private var exactValueCounter: TallyCounter?
-    @State private var folderColorGroup: String?
-    @State private var folderColorRaw = CounterColor.gray.rawValue
-    @AppStorage("tally.collapsedGroups") private var collapsedGroupsRaw = ""
-
-    private var showingFolderColor: Binding<Bool> {
-        Binding(
-            get: { folderColorGroup != nil },
-            set: { newValue in
-                guard !newValue else { return }
-                if let group = folderColorGroup { store.updateFolderColor(group: group, rawValue: folderColorRaw) }
-                folderColorGroup = nil
-            }
-        )
-    }
+    @AppStorage("tally.collapsedFolders.v17") private var collapsedFoldersRaw = ""
 
     var body: some View {
         NavigationStack {
@@ -52,14 +41,22 @@ struct CountersView: View {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         quickStats
                         if !pinnedCounters.isEmpty { favoritesSection }
-                        if visibleCounters.isEmpty {
+
+                        ForEach(visibleFolders) { folder in
+                            folderSection(folder)
+                        }
+
+                        if !unfiledCounters.isEmpty || store.folders.isEmpty {
+                            unfiledSection
+                        }
+
+                        if visibleCounters.isEmpty && store.folders.isEmpty {
                             ContentUnavailableView(
-                                searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No Active Counters" : "No Matches",
-                                systemImage: "magnifyingglass",
-                                description: Text(searchText.isEmpty ? "Create a counter or restore one from the archive." : "Try a different name, folder, or note.")
-                            ).padding(.top, 40)
-                        } else {
-                            ForEach(visibleGroups, id: \.self) { group in folderSection(group) }
+                                searchText.isEmpty ? "No Counters or Folders" : "No Matches",
+                                systemImage: "square.grid.2x2",
+                                description: Text(searchText.isEmpty ? "Create a folder or a counter to begin." : "Try another search.")
+                            )
+                            .padding(.top, 36)
                         }
                     }
                     .safeAreaPadding(.top, 8)
@@ -67,7 +64,7 @@ struct CountersView: View {
                 }
             }
             .navigationTitle("Tally")
-            .searchable(text: $searchText, prompt: "Search counters")
+            .searchable(text: $searchText, prompt: "Search counters and folders")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { store.undoLastAction() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
@@ -76,86 +73,166 @@ struct CountersView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Menu {
                         Picker("Sort", selection: $sort) {
-                            ForEach(CounterSort.allCases) { option in Label(option.title, systemImage: option.systemImage).tag(option) }
+                            ForEach(CounterSort.allCases) { option in
+                                Label(option.title, systemImage: option.systemImage).tag(option)
+                            }
                         }
                         Divider()
-                        Button("Expand All", systemImage: "rectangle.expand.vertical") { collapsedGroupsRaw = "" }
-                        Button("Collapse All", systemImage: "rectangle.compress.vertical") { collapsedGroupsRaw = visibleGroups.joined(separator: "\n") }
-                    } label: { Label("Sort and Folders", systemImage: "arrow.up.arrow.down.circle") }
-                    Button { showingAdd = true } label: { Label("New", systemImage: "plus.circle.fill") }
+                        Button("Expand All", systemImage: "rectangle.expand.vertical") { collapsedFoldersRaw = "" }
+                        Button("Collapse All", systemImage: "rectangle.compress.vertical") {
+                            collapsedFoldersRaw = store.folders.map(\.id.uuidString).joined(separator: "\n")
+                        }
+                    } label: { Label("Sort", systemImage: "arrow.up.arrow.down.circle") }
+
+                    Menu {
+                        Button("New Counter", systemImage: "number.square.fill") { showingAddCounter = true }
+                        Button("New Folder", systemImage: "folder.badge.plus") { showingAddFolder = true }
+                    } label: { Label("Create", systemImage: "plus.circle.fill") }
                 }
             }
-            .sheet(isPresented: $showingAdd) { CounterEditorView(mode: .add) }
+            .sheet(isPresented: $showingAddCounter) { CounterEditorView(mode: .add) }
+            .sheet(isPresented: $showingAddFolder) { FolderEditorView() }
+            .sheet(item: $editingFolder) { FolderEditorView(existing: $0) }
+            .sheet(item: $quickTimerFolder) { QuickFolderTimerSheet(folder: $0) }
             .sheet(item: $exactValueCounter) { ExactValueEditor(counter: $0) }
-            .sheet(isPresented: showingFolderColor) {
-                if let group = folderColorGroup {
-                    NavigationStack {
-                        CounterColorSelectionView(
-                            selection: Binding(
-                                get: { CounterColor(rawValue: folderColorRaw) ?? .gray },
-                                set: { folderColorRaw = $0.rawValue }
-                            ),
-                            title: "\(group) Folder Color"
-                        )
-                    }
-                }
-            }
+            .task { store.ensureFoldersMigrated() }
         }
     }
 
     private var favoritesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Favorites", systemImage: "pin.fill").font(.headline.weight(.heavy)).padding(.horizontal)
+            Label("Favorites", systemImage: "pin.fill")
+                .font(.headline.weight(.heavy)).padding(.horizontal)
             ForEach(pinnedCounters) { counter in
-                CounterCard(counter: counter) { exactValueCounter = counter }.padding(.horizontal)
+                draggableCard(counter)
             }
         }
     }
 
-    private func folderSection(_ group: String) -> some View {
-        let items = counters(in: group)
-        let raw = store.folderColorRaw(for: group)
-        let tint = TallyStoredColor.color(raw, fallback: .gray)
+    private func folderSection(_ folder: TallyFolder) -> some View {
+        let items = counters(in: folder)
+        let tint = TallyStoredColor.color(folder.colorRaw, fallback: .blue)
         return VStack(alignment: .leading, spacing: 10) {
-            Button { toggleGroup(group) } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: isCollapsed(group) ? "folder.fill" : "folder.fill.badge.minus").foregroundStyle(tint)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(group).font(.headline.weight(.heavy)).foregroundStyle(tint)
-                        Text("\(items.count) counters • Total \(items.map(\.value).reduce(0, +))").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Button { toggleFolder(folder) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: isCollapsed(folder) ? "folder.fill" : "folder.fill.badge.minus")
+                            .foregroundStyle(tint)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(folder.name).font(.headline.weight(.heavy)).foregroundStyle(tint)
+                            Text("\(items.count) counters • Total \(items.map(\.value).reduce(0, +))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
-                    Spacer()
-                    Image(systemName: isCollapsed(group) ? "chevron.down" : "chevron.up").foregroundStyle(.secondary)
-                }.contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).padding(.horizontal)
-            .contextMenu {
-                Button("Change Folder Color", systemImage: "paintpalette") {
-                    folderColorRaw = raw
-                    folderColorGroup = group
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button { quickTimerFolder = folder } label: {
+                    Image(systemName: "timer.circle.fill")
+                        .font(.title2).foregroundStyle(tint)
+                }
+                .accessibilityLabel("Quick timer in \(folder.name)")
+
+                Menu {
+                    Button("Edit Folder", systemImage: "pencil") { editingFolder = folder }
+                    Button("Quick Timer", systemImage: "timer") { quickTimerFolder = folder }
+                    Divider()
+                    Button("Delete Folder", systemImage: "trash", role: .destructive) {
+                        store.deleteFolder(folder, keepCounters: true)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+                }
+
+                Image(systemName: isCollapsed(folder) ? "chevron.down" : "chevron.up")
+                    .font(.caption.weight(.bold)).foregroundStyle(.secondary)
             }
-            if !isCollapsed(group) {
-                ForEach(items.filter { !$0.isPinned }) { counter in
-                    CounterCard(counter: counter) { exactValueCounter = counter }.padding(.horizontal)
+            .padding(.horizontal)
+
+            if !isCollapsed(folder) {
+                ForEach(items.filter { !$0.isPinned }) { counter in draggableCard(counter) }
+                if items.isEmpty {
+                    Text("Drop a counter here or use the timer button.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity).padding(.vertical, 18)
+                        .background(tint.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
+                        .padding(.horizontal)
                 }
             }
         }
-        .animation(.snappy, value: isCollapsed(group))
+        .padding(.vertical, 4)
+        .background(tint.opacity(0.035), in: RoundedRectangle(cornerRadius: 24))
+        .dropDestination(for: String.self) { values, _ in
+            guard let raw = values.first, let id = UUID(uuidString: raw),
+                  let counter = store.counters.first(where: { $0.id == id }) else { return false }
+            store.moveCounter(counter, to: folder)
+            return true
+        }
+        .animation(.snappy, value: isCollapsed(folder))
     }
 
-    private var collapsedGroups: Set<String> { Set(collapsedGroupsRaw.split(separator: "\n").map(String.init)) }
-    private func isCollapsed(_ group: String) -> Bool { collapsedGroups.contains(group) }
-    private func toggleGroup(_ group: String) {
-        var groups = collapsedGroups
-        if groups.contains(group) { groups.remove(group) } else { groups.insert(group) }
-        collapsedGroupsRaw = groups.sorted().joined(separator: "\n")
+    private var unfiledSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Unfiled", systemImage: "tray")
+                    .font(.headline.weight(.heavy)).foregroundStyle(.secondary)
+                Spacer()
+                Text("Drop here to remove from a folder")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal)
+
+            ForEach(unfiledCounters.filter { !$0.isPinned }) { counter in draggableCard(counter) }
+
+            if unfiledCounters.isEmpty {
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color.secondary.opacity(0.05))
+                    .frame(height: 58)
+                    .overlay(Text("Drop counters here").font(.caption).foregroundStyle(.secondary))
+                    .padding(.horizontal)
+            }
+        }
+        .dropDestination(for: String.self) { values, _ in
+            guard let raw = values.first, let id = UUID(uuidString: raw),
+                  let counter = store.counters.first(where: { $0.id == id }) else { return false }
+            store.moveCounter(counter, to: nil)
+            return true
+        }
+    }
+
+    private func draggableCard(_ counter: TallyCounter) -> some View {
+        CounterCard(counter: counter) { exactValueCounter = counter }
+            .padding(.horizontal)
+            .draggable(counter.id.uuidString) {
+                HStack(spacing: 8) {
+                    Image(systemName: counter.symbol)
+                    Text(counter.name).fontWeight(.semibold)
+                }
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            }
+    }
+
+    private var collapsedFolders: Set<String> {
+        Set(collapsedFoldersRaw.split(separator: "\n").map(String.init))
+    }
+    private func isCollapsed(_ folder: TallyFolder) -> Bool { collapsedFolders.contains(folder.id.uuidString) }
+    private func toggleFolder(_ folder: TallyFolder) {
+        var values = collapsedFolders
+        if values.contains(folder.id.uuidString) { values.remove(folder.id.uuidString) }
+        else { values.insert(folder.id.uuidString) }
+        collapsedFoldersRaw = values.sorted().joined(separator: "\n")
     }
 
     private var visibleCounters: [TallyCounter] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered = trimmed.isEmpty ? store.activeCounters : store.activeCounters.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) || $0.displayGroup.localizedCaseInsensitiveContains(trimmed) || $0.notes.localizedCaseInsensitiveContains(trimmed)
+            $0.name.localizedCaseInsensitiveContains(trimmed) ||
+            $0.displayGroup.localizedCaseInsensitiveContains(trimmed) ||
+            $0.notes.localizedCaseInsensitiveContains(trimmed)
         }
         switch sort {
         case .manual: return filtered
@@ -165,17 +242,30 @@ struct CountersView: View {
         }
     }
 
+    private var visibleFolders: [TallyFolder] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return store.folders }
+        return store.folders.filter { folder in
+            folder.name.localizedCaseInsensitiveContains(trimmed) || visibleCounters.contains { $0.displayGroup == folder.name }
+        }
+    }
+    private var knownFolderNames: Set<String> { Set(store.folders.map { $0.name.lowercased() }) }
+    private var unfiledCounters: [TallyCounter] {
+        visibleCounters.filter { counter in
+            let raw = counter.group.trimmingCharacters(in: .whitespacesAndNewlines)
+            return raw.isEmpty || !knownFolderNames.contains(raw.lowercased())
+        }
+    }
     private var pinnedCounters: [TallyCounter] { visibleCounters.filter(\.isPinned) }
-    private var visibleGroups: [String] { store.groups(for: visibleCounters) }
-    private func counters(in group: String) -> [TallyCounter] { visibleCounters.filter { $0.displayGroup == group } }
+    private func counters(in folder: TallyFolder) -> [TallyCounter] {
+        visibleCounters.filter { $0.displayGroup.localizedCaseInsensitiveCompare(folder.name) == .orderedSame }
+    }
 
     private var background: some View {
         Group {
-            if store.theme == .oled {
-                Color.black.ignoresSafeArea()
-            } else if store.theme == .dark {
-                Color(red: 0.055, green: 0.055, blue: 0.065).ignoresSafeArea()
-            } else {
+            if store.theme == .oled { Color.black.ignoresSafeArea() }
+            else if store.theme == .dark { Color(red: 0.055, green: 0.055, blue: 0.065).ignoresSafeArea() }
+            else {
                 LinearGradient(colors: [Color(.systemBackground), Color.blue.opacity(0.06)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             }
         }
@@ -184,9 +274,10 @@ struct CountersView: View {
     private var quickStats: some View {
         HStack(spacing: 12) {
             StatPill(title: "Active", value: "\(store.activeCounters.count)", systemImage: "number")
-            StatPill(title: "Pinned", value: "\(store.activeCounters.filter(\.isPinned).count)", systemImage: "pin")
+            StatPill(title: "Folders", value: "\(store.folders.count)", systemImage: "folder")
             StatPill(title: "Total", value: "\(visibleCounters.map(\.value).reduce(0, +))", systemImage: "sum")
-        }.padding(.horizontal)
+        }
+        .padding(.horizontal)
     }
 }
 
@@ -273,7 +364,7 @@ struct CounterCard: View {
                         Button("Move Up", systemImage: "arrow.up") { store.moveCounter(counter, by: -1) }
                         Button("Move Down", systemImage: "arrow.down") { store.moveCounter(counter, by: 1) }
                     }
-                    Menu("More Actions", systemImage: "ellipsis.circle") {
+                    Menu("More", systemImage: "ellipsis.circle") {
                         Button("+100", systemImage: "plus.circle") { store.safeAdjust(counter, by: 100) }.disabled(counter.isLocked)
                         Button("Reset", systemImage: "arrow.counterclockwise", role: .destructive) { showingResetConfirmation = true }.disabled(counter.isLocked)
                         Button("Archive", systemImage: "archivebox", role: .destructive) { showingArchiveConfirmation = true }
