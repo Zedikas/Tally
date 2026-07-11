@@ -22,9 +22,17 @@ enum TallyStoredColor {
     }
 
     static func color(_ raw: String, fallback: CounterColor = .blue) -> Color {
-        if let preset = preset(raw) { return preset.color }
         if let hex = customHex(raw), let color = Color(hex: hex) { return color }
-        return fallback.color
+        switch preset(raw) ?? fallback {
+        case .blue: return Color(hex: "0A84FF") ?? .blue
+        case .purple: return Color(hex: "9000FF") ?? .purple
+        case .pink: return Color(hex: "FF7EFF") ?? .pink
+        case .green: return Color(hex: "30D158") ?? .green
+        case .orange: return Color(hex: "FF9F0A") ?? .orange
+        case .red: return Color(hex: "FF453A") ?? .red
+        case .teal: return Color(hex: "64D2FF") ?? .teal
+        case .gray: return Color(hex: "8E8E93") ?? .gray
+        }
     }
 
     static func title(_ raw: String, fallback: CounterColor = .blue) -> String {
@@ -32,6 +40,29 @@ enum TallyStoredColor {
         if let hex = customHex(raw) { return "#\(hex)" }
         return fallback.title
     }
+
+    #if canImport(UIKit)
+    static func swatchImage(_ color: Color, selected: Bool) -> UIImage {
+        let size = CGSize(width: 22, height: 22)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            let rect = CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2)
+            UIColor(color).setFill()
+            context.cgContext.fillEllipse(in: rect)
+            if selected {
+                UIColor.white.setStroke()
+                context.cgContext.setLineWidth(2)
+                context.cgContext.strokeEllipse(in: rect.insetBy(dx: 2, dy: 2))
+                context.cgContext.setLineWidth(2.2)
+                context.cgContext.setLineCap(.round)
+                context.cgContext.move(to: CGPoint(x: 7, y: 11))
+                context.cgContext.addLine(to: CGPoint(x: 10, y: 14))
+                context.cgContext.addLine(to: CGPoint(x: 16, y: 7))
+                context.cgContext.strokePath()
+            }
+        }.withRenderingMode(.alwaysOriginal)
+    }
+    #endif
 }
 
 struct StoredColorMenu: View {
@@ -47,7 +78,16 @@ struct StoredColorMenu: View {
         Menu {
             ForEach(CounterColor.allCases) { option in
                 Button { rawValue = option.rawValue } label: {
-                    Label(option.title, systemImage: rawValue == option.rawValue ? "checkmark.circle.fill" : "circle.fill")
+                    #if canImport(UIKit)
+                    Label {
+                        Text(option.title)
+                    } icon: {
+                        Image(uiImage: TallyStoredColor.swatchImage(TallyStoredColor.color(option.rawValue), selected: rawValue == option.rawValue))
+                            .renderingMode(.original)
+                    }
+                    #else
+                    Text(option.title)
+                    #endif
                 }
             }
             Divider()
@@ -112,6 +152,7 @@ extension TallyStore {
     }
 
     func folderColorRaw(for group: String) -> String {
+        if let folder = folder(named: group) { return folder.colorRaw }
         if let stored = storedFolderColors()[group] { return stored }
         return activeCounters.first(where: { $0.displayGroup == group })?.folderColorName ?? CounterColor.gray.rawValue
     }
@@ -119,8 +160,11 @@ extension TallyStore {
     func updateFolderColor(group: String, rawValue: String) {
         var values = storedFolderColors()
         values[group] = rawValue
-        if let data = try? JSONEncoder().encode(values) {
-            UserDefaults.standard.set(data, forKey: folderColorDefaultsKey)
+        if let data = try? JSONEncoder().encode(values) { UserDefaults.standard.set(data, forKey: folderColorDefaultsKey) }
+        var folderValues = folders
+        if let index = folderValues.firstIndex(where: { $0.name.localizedCaseInsensitiveCompare(group) == .orderedSame }) {
+            folderValues[index].colorRaw = rawValue
+            folders = folderValues
         }
         for index in counters.indices where counters[index].displayGroup == group {
             counters[index].folderColorName = rawValue
