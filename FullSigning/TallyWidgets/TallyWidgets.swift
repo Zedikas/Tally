@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -8,6 +9,9 @@ struct TallyWidgetBundle: WidgetBundle {
         TallyCounterWidget()
         TallyPinnedCountersWidget()
         TallySessionLiveActivity()
+        if #available(iOSApplicationExtension 18.0, *) {
+            TallyQuickIncrementControl()
+        }
     }
 }
 
@@ -23,7 +27,16 @@ struct TallyWidgetProvider: TimelineProvider {
             snapshot: .init(
                 generatedAt: Date(),
                 counters: [
-                    .init(id: UUID(), name: "Demo", value: 12, goal: 20, symbol: "number.square.fill", colorRaw: "blue", folderName: "Favorites", isPinned: true)
+                    .init(
+                        id: UUID(),
+                        name: "Demo",
+                        value: 12,
+                        goal: 20,
+                        symbol: "number.square.fill",
+                        colorRaw: "blue",
+                        folderName: "Favorites",
+                        isPinned: true
+                    )
                 ]
             )
         )
@@ -49,7 +62,7 @@ struct TallyCounterWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Tally Counter")
-        .description("See your first pinned counter at a glance.")
+        .description("See and adjust your first pinned counter.")
         .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
     }
 }
@@ -66,31 +79,49 @@ struct TallyCounterWidgetView: View {
         if let counter {
             switch family {
             case .accessoryCircular:
-                Gauge(value: Double(counter.value), in: 0...Double(max(counter.goal ?? max(counter.value, 1), 1))) {
+                Gauge(
+                    value: Double(counter.value),
+                    in: 0...Double(max(counter.goal ?? max(counter.value, 1), 1))
+                ) {
                     Image(systemName: counter.symbol)
                 } currentValueLabel: {
                     Text("\(counter.value)").monospacedDigit()
                 }
                 .gaugeStyle(.accessoryCircularCapacity)
+
             case .accessoryRectangular:
                 VStack(alignment: .leading, spacing: 2) {
                     Label(counter.name, systemImage: counter.symbol).font(.headline)
                     Text("\(counter.value)").font(.title2.bold()).monospacedDigit()
                     Text(counter.folderName).font(.caption2).foregroundStyle(.secondary)
                 }
+
             default:
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
                     HStack {
                         Image(systemName: counter.symbol).font(.title2)
                         Spacer()
                         if counter.isPinned { Image(systemName: "pin.fill").font(.caption) }
                     }
                     Text(counter.name).font(.headline).lineLimit(1)
-                    Text("\(counter.value)").font(.system(size: 38, weight: .black, design: .rounded)).monospacedDigit()
+                    Text("\(counter.value)")
+                        .font(.system(size: 34, weight: .black, design: .rounded))
+                        .monospacedDigit()
                     if let goal = counter.goal, goal > 0 {
                         ProgressView(value: min(max(Double(counter.value) / Double(goal), 0), 1))
                     }
-                    Text(counter.folderName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    HStack(spacing: 8) {
+                        Button(intent: TallyExtensionIncrementIntent(counterID: counter.id.uuidString, amount: 1)) {
+                            Label("+1", systemImage: "plus").labelStyle(.titleOnly)
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button(intent: TallyExtensionIncrementIntent(counterID: counter.id.uuidString, amount: 5)) {
+                            Label("+5", systemImage: "plus").labelStyle(.titleOnly)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    Text(counter.folderName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
         } else {
@@ -108,7 +139,7 @@ struct TallyPinnedCountersWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Pinned Tally Counters")
-        .description("See several pinned counters without opening Tally.")
+        .description("See and adjust several pinned counters.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
@@ -138,6 +169,11 @@ struct TallyPinnedCountersWidgetView: View {
                         }
                         Spacer()
                         Text("\(counter.value)").font(.title3.bold()).monospacedDigit()
+                        Button(intent: TallyExtensionIncrementIntent(counterID: counter.id.uuidString, amount: 1)) {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Increase \(counter.name) by one")
                     }
                 }
             }
@@ -153,8 +189,11 @@ struct TallySessionLiveActivity: Widget {
         ActivityConfiguration(for: TallySessionActivityAttributes.self) { context in
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Label(context.attributes.title, systemImage: context.state.isPaused ? "pause.circle.fill" : "timer.circle.fill")
-                        .font(.headline)
+                    Label(
+                        context.attributes.title,
+                        systemImage: context.state.isPaused ? "pause.circle.fill" : "timer.circle.fill"
+                    )
+                    .font(.headline)
                     Spacer()
                     Text(durationText(context.state.elapsedSeconds)).monospacedDigit().font(.title3.bold())
                 }
@@ -198,10 +237,27 @@ struct TallySessionLiveActivity: Widget {
     }
 }
 
+@available(iOSApplicationExtension 18.0, *)
+struct TallyQuickIncrementControl: ControlWidget {
+    static let kind = "TallyQuickIncrementControl"
+
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: Self.kind) {
+            ControlWidgetButton(action: TallyExtensionIncrementIntent(counterID: "", amount: 1)) {
+                Label("Increment Tally", systemImage: "plus.circle.fill")
+            }
+        }
+        .displayName("Increment Tally")
+        .description("Increase the first pinned Tally counter by one.")
+    }
+}
+
 private func durationText(_ seconds: Int) -> String {
     let safe = max(0, seconds)
     let hours = safe / 3600
     let minutes = (safe % 3600) / 60
     let remainder = safe % 60
-    return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, remainder) : String(format: "%02d:%02d", minutes, remainder)
+    return hours > 0
+        ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+        : String(format: "%02d:%02d", minutes, remainder)
 }
