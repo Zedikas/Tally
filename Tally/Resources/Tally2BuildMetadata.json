@@ -17,5 +17,5 @@
   ],
   "entitlementDependentFeatures": "Available through project-full.yml",
   "pinBehavior": "Pinned counters remain at the top of their assigned folder",
-  "buildTrigger": "finalized"
+  "buildTrigger": "compiler-cleanup-retry"
 }
