@@ -3,6 +3,16 @@
   "build": 20,
   "schema": "2.0",
   "configuration": "AppDB-safe",
+  "coreFeatures": [
+    "stable folder IDs",
+    "in-folder pinning",
+    "counter and folder drag reordering",
+    "versioned backups and sync packages",
+    "pauseable sessions",
+    "advanced reset schedules",
+    "local notifications",
+    "App Intents"
+  ],
   "entitlementDependentFeatures": "Available through project-full.yml",
   "pinBehavior": "Pinned counters remain at the top of their assigned folder"
 }
