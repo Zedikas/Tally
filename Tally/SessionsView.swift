@@ -34,25 +34,49 @@ struct SessionsView: View {
                         .buttonStyle(.plain)
                         .padding(.horizontal)
 
+                        if store.activeSessions.isEmpty, let last = store.finishedSessions.first {
+                            Button {
+                                _ = store.startSession(
+                                    counterID: last.counterID,
+                                    title: last.title,
+                                    notes: last.notes,
+                                    goalDuration: last.goalDuration
+                                )
+                            } label: {
+                                Label("Resume Last Session", systemImage: "arrow.clockwise.circle.fill")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(15)
+                            }
+                            .buttonStyle(.bordered)
+                            .padding(.horizontal)
+                        }
+
                         if !store.activeSessions.isEmpty {
-                            SectionHeader(title: "Active Sessions", subtitle: "Timers update while this screen is open")
+                            SectionHeader(title: "Active Sessions", subtitle: "Pause, resume, or finish at any time")
                             VStack(spacing: 10) {
-                                ForEach(store.activeSessions) { session in ActiveSessionRow(session: session) }
-                            }.padding(.horizontal)
+                                ForEach(store.activeSessions) { session in
+                                    ActiveSessionRow(session: session)
+                                }
+                            }
+                            .padding(.horizontal)
                         }
 
                         if !store.finishedSessions.isEmpty {
                             SectionHeader(title: "Recent Sessions", subtitle: "Finished counting blocks")
                             VStack(spacing: 10) {
-                                ForEach(store.finishedSessions.prefix(20)) { session in FinishedSessionRow(session: session) }
-                            }.padding(.horizontal)
+                                ForEach(store.finishedSessions.prefix(20)) { session in
+                                    FinishedSessionRow(session: session)
+                                }
+                            }
+                            .padding(.horizontal)
                         }
 
                         if store.sessions.isEmpty {
                             VStack(spacing: 14) {
                                 Image(systemName: "timer.circle").font(.system(size: 70)).foregroundStyle(.secondary)
                                 Text("No Sessions Yet").font(.title2.weight(.heavy))
-                                Text("Start a focused timing block from here or use the timer beside any folder.")
+                                Text("Start a focused timing block from here or use Quick Create beside a folder.")
                                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                             }
                             .frame(maxWidth: .infinity).padding(.top, 52).padding(.horizontal, 28)
@@ -88,6 +112,7 @@ struct NewSessionView: View {
     @State private var title = ""
     @State private var notes = ""
     @State private var selectedCounterID: UUID?
+    @State private var goalMinutesText = ""
 
     private var selectedCounterName: String {
         guard let selectedCounterID,
@@ -95,11 +120,16 @@ struct NewSessionView: View {
         return counter.name
     }
 
+    private var goalDuration: TimeInterval? {
+        guard let minutes = Double(goalMinutesText), minutes > 0 else { return nil }
+        return minutes * 60
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    sessionCard("Session") {
+                    TallyEditorCard(title: "Session", systemImage: "timer") {
                         TextField("Session name", text: $title)
                             .font(.title3.weight(.semibold))
                         Divider()
@@ -121,16 +151,19 @@ struct NewSessionView: View {
                                 Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.secondary)
                             }
                         }
+                        Divider()
+                        TextField("Optional goal in minutes", text: $goalMinutesText)
+                            .keyboardType(.decimalPad)
                     }
 
-                    sessionCard("Notes") {
+                    TallyEditorCard(title: "Notes", systemImage: "note.text") {
                         TextField("Optional notes", text: $notes, axis: .vertical)
                             .lineLimit(3...6)
                     }
 
                     HStack(spacing: 10) {
                         Image(systemName: "info.circle.fill").foregroundStyle(.secondary)
-                        Text("Linked sessions record the counter value when they begin and end. Standalone sessions track time only.")
+                        Text("Linked sessions record the counter value when they begin and end. Sessions can be paused without affecting elapsed time.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     .padding(16)
@@ -145,21 +178,12 @@ struct NewSessionView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") {
-                        store.startSession(counterID: selectedCounterID, title: title, notes: notes)
+                        store.startSession(counterID: selectedCounterID, title: title, notes: notes, goalDuration: goalDuration)
                         dismiss()
                     }
                 }
             }
         }
-    }
-
-    private func sessionCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(title.uppercased()).font(.caption.weight(.bold)).foregroundStyle(.secondary)
-            content()
-        }
-        .padding(18)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
@@ -169,19 +193,50 @@ struct ActiveSessionRow: View {
     @State private var showingCancelConfirmation = false
 
     var body: some View {
-        TimelineView(.periodic(from: Date(), by: 1)) { context in
-            HStack(spacing: 12) {
-                Circle().fill(.orange.opacity(0.18)).overlay(Image(systemName: "timer").foregroundStyle(.orange)).frame(width: 42, height: 42)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(session.title).font(.headline)
-                    Text("\(session.counterName) • started \(session.startedAt, style: .time)").font(.caption).foregroundStyle(.secondary)
-                    Text(formatDuration(context.date.timeIntervalSince(session.startedAt))).font(.title3.weight(.heavy).monospacedDigit())
+        TimelineView(.periodic(from: Date(), by: 1)) { _ in
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(.orange.opacity(0.18))
+                        .overlay(Image(systemName: session.isPaused ? "pause.fill" : "timer").foregroundStyle(.orange))
+                        .frame(width: 42, height: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(session.title).font(.headline)
+                        Text("\(session.counterName) • \(session.isPaused ? "Paused" : "Running")")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text(formatDuration(session.duration))
+                            .font(.title3.weight(.heavy).monospacedDigit())
+                    }
+                    Spacer()
+                    Menu {
+                        if session.isPaused {
+                            Button("Resume Session", systemImage: "play.circle") { store.resumeSession(session) }
+                        } else {
+                            Button("Pause Session", systemImage: "pause.circle") { store.pauseSession(session) }
+                        }
+                        Button("End Session", systemImage: "stop.circle") { store.endSession(session) }
+                        Button("Cancel Session", systemImage: "xmark.circle", role: .destructive) { showingCancelConfirmation = true }
+                    } label: {
+                        Image(systemName: "ellipsis.circle").font(.title3)
+                    }
                 }
-                Spacer()
-                Menu {
-                    Button("End Session") { store.endSession(session) }
-                    Button("Cancel Session", role: .destructive) { showingCancelConfirmation = true }
-                } label: { Image(systemName: "ellipsis.circle").font(.title3) }
+
+                if let progress = session.progress {
+                    ProgressView(value: progress).tint(.orange)
+                    if let goal = session.goalDuration {
+                        Text("Goal \(formatDuration(goal))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button(session.isPaused ? "Resume" : "Pause") {
+                        session.isPaused ? store.resumeSession(session) : store.pauseSession(session)
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Finish") { store.endSession(session) }
+                        .buttonStyle(.borderedProminent)
+                }
             }
             .padding(14)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -206,11 +261,18 @@ struct FinishedSessionRow: View {
                 HStack(spacing: 8) {
                     Text(formatDuration(session.duration))
                     if let delta = session.delta { Text(delta >= 0 ? "+\(delta)" : "\(delta)") }
-                }.font(.subheadline.weight(.bold).monospacedDigit())
+                    if let goal = session.goalDuration, session.duration >= goal {
+                        Label("Goal", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    }
+                }
+                .font(.subheadline.weight(.bold).monospacedDigit())
             }
             Spacer()
             Menu {
-                Button("Delete Session", role: .destructive) { showingDeleteConfirmation = true }
+                Button("Start Again", systemImage: "arrow.clockwise") {
+                    store.startSession(counterID: session.counterID, title: session.title, notes: session.notes, goalDuration: session.goalDuration)
+                }
+                Button("Delete Session", systemImage: "trash", role: .destructive) { showingDeleteConfirmation = true }
             } label: { Image(systemName: "ellipsis.circle").font(.title3) }
         }
         .padding(14)
