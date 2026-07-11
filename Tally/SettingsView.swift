@@ -6,11 +6,14 @@ import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject private var store: TallyStore
-    @State private var exportURL: URL?
     @State private var showingChangelog = false
-    @State private var showingImporter = false
-    @State private var importMessage: String?
-    @State private var importPreview: TallyBackupPreview?
+    @State private var showingOnboarding = false
+
+    private var versionText: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
+        return "\(version) build \(build)"
+    }
 
     var body: some View {
         NavigationStack {
@@ -23,57 +26,221 @@ struct SettingsView: View {
                         SettingsNavigationRow(title: "App Icon", subtitle: "Choose from the complete Tally icon family", systemImage: "app.badge.fill")
                     }
                 }
+
+                Section("Behavior") {
+                    Toggle(isOn: $store.preferences.hapticsEnabled) {
+                        Label("Haptic Feedback", systemImage: "waveform.path")
+                    }
+                    Toggle(isOn: $store.preferences.reducedAnimations) {
+                        Label("Reduce Tally Animations", systemImage: "figure.walk.motion")
+                    }
+                    Button {
+                        showingOnboarding = true
+                    } label: {
+                        Label("Show Welcome Guide", systemImage: "sparkles.rectangle.stack")
+                    }
+                }
+
+                Section("Data & Sync") {
+                    NavigationLink { SyncCenterView() } label: {
+                        SettingsNavigationRow(
+                            title: "Sync Center",
+                            subtitle: "Backups, Android interchange, imports, and diagnostics",
+                            systemImage: "arrow.triangle.2.circlepath.icloud",
+                            value: "r\(store.preferences.syncRevision)"
+                        )
+                    }
+                }
+
                 Section("Counter Management") {
                     NavigationLink { ArchivedCountersView() } label: {
                         SettingsNavigationRow(title: "Archived Counters", subtitle: "Restore or permanently remove counters", systemImage: "archivebox.fill", value: "\(store.archivedCounters.count)")
                     }
                     LabeledContent("Pinned Counters", value: "\(store.activeCounters.filter(\.isPinned).count)")
                     LabeledContent("Locked Counters", value: "\(store.activeCounters.filter(\.isLocked).count)")
+                    LabeledContent("Folders", value: "\(store.folders.count)")
                 }
-                Section("Backup & Import") {
-                    Button { exportURL = store.exportJSONURL() } label: { Label("Create JSON Backup", systemImage: "externaldrive.fill") }
-                    Button { exportURL = store.exportCSVURL() } label: { Label("Export History CSV", systemImage: "clock.arrow.circlepath") }
-                    Button { exportURL = store.exportSessionsCSVURL() } label: { Label("Export Sessions CSV", systemImage: "timer") }
-                    if let exportURL { ShareLink(item: exportURL) { Label("Share Latest Export", systemImage: "square.and.arrow.up") } }
-                    Button { showingImporter = true } label: { Label("Preview & Import JSON Backup", systemImage: "doc.text.magnifyingglass") }
-                    if let importMessage { Text(importMessage).font(.caption).foregroundStyle(.secondary) }
+
+                Section("Installation Compatibility") {
+                    NavigationLink { AppDBCompatibilityView() } label: {
+                        SettingsNavigationRow(
+                            title: "AppDB-safe Mode",
+                            subtitle: "See which features avoid restricted signing entitlements",
+                            systemImage: "checkmark.shield.fill"
+                        )
+                    }
                 }
+
                 Section("About") {
-                    LabeledContent("Version", value: "1.6.1 build 9")
+                    LabeledContent("Version", value: versionText)
+                    LabeledContent("Data Schema", value: "2.0")
                     Button("Changelog") { showingChangelog = true }
                 }
             }
             .tallyOLEDBackground()
             .navigationTitle("Settings")
             .sheet(isPresented: $showingChangelog) { ChangelogView() }
-            .sheet(item: $importPreview) { preview in
-                BackupImportPreviewView(preview: preview) { replaceExisting in
-                    do {
-                        try store.importBackup(from: preview.url, replaceExisting: replaceExisting)
-                        importMessage = replaceExisting ? "Backup imported and replaced current data." : "Backup imported and merged."
-                        importPreview = nil
-                    } catch { importMessage = "Import failed: \(error.localizedDescription)" }
+            .sheet(isPresented: $showingOnboarding) { TallyOnboardingView().environmentObject(store) }
+        }
+    }
+}
+
+struct SyncCenterView: View {
+    @EnvironmentObject private var store: TallyStore
+    @State private var exportURL: URL?
+    @State private var showingImporter = false
+    @State private var importMessage: String?
+    @State private var importPreview: TallyBackupPreview?
+
+    private static let tallySyncType = UTType(filenameExtension: "tallysync") ?? .data
+
+    var body: some View {
+        List {
+            Section("Portable Backup") {
+                Button { exportURL = store.exportJSONURL() } label: {
+                    Label("Create Full JSON Backup", systemImage: "externaldrive.fill")
+                }
+                Text("Includes counters, folders, folder presets, sessions, history, appearance, ordering, and preferences.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("iOS ↔ Android Sync Package") {
+                Button { exportURL = store.exportSyncPackageURL() } label: {
+                    Label("Create Sync Package", systemImage: "arrow.left.arrow.right.circle.fill")
+                }
+                Button { showingImporter = true } label: {
+                    Label("Preview & Import Backup", systemImage: "doc.text.magnifyingglass")
+                }
+                Text("AppDB-safe sync uses explicit files and conflict-aware merging. Automatic CloudKit sync remains disabled because it requires provisioning-profile entitlements.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Exports") {
+                Button { exportURL = store.exportCSVURL() } label: {
+                    Label("Export History CSV", systemImage: "clock.arrow.circlepath")
+                }
+                Button { exportURL = store.exportSessionsCSVURL() } label: {
+                    Label("Export Sessions CSV", systemImage: "timer")
+                }
+                Button { exportURL = store.exportDiagnosticsURL() } label: {
+                    Label("Export Diagnostics", systemImage: "stethoscope")
                 }
             }
-            .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json], allowsMultipleSelection: false) { handleImport($0) }
+
+            if let exportURL {
+                Section("Ready to Share") {
+                    ShareLink(item: exportURL) {
+                        Label("Share \(exportURL.lastPathComponent)", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
+
+            if let importMessage {
+                Section("Last Import") {
+                    Text(importMessage).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Sync Identity") {
+                LabeledContent("Device", value: String(store.preferences.deviceID.uuidString.prefix(8)))
+                LabeledContent("Revision", value: "\(store.preferences.syncRevision)")
+                LabeledContent("Last Sync", value: store.preferences.lastSyncAt?.formatted(date: .abbreviated, time: .shortened) ?? "Never")
+            }
         }
+        .tallyOLEDBackground()
+        .navigationTitle("Sync Center")
+        .sheet(item: $importPreview) { preview in
+            BackupImportPreviewView(preview: preview) { replaceExisting in
+                do {
+                    try store.importBackup(from: preview.url, replaceExisting: replaceExisting)
+                    importMessage = replaceExisting ? "Backup imported and replaced current data." : "Backup imported and merged. Folder and counter IDs were remapped safely."
+                    importPreview = nil
+                } catch {
+                    importMessage = "Import failed: \(error.localizedDescription)"
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $showingImporter,
+            allowedContentTypes: [.json, Self.tallySyncType],
+            allowsMultipleSelection: false
+        ) { handleImport($0) }
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            guard let url = urls.first else { importMessage = "No backup file selected."; return }
+            guard let url = urls.first else {
+                importMessage = "No backup file selected."
+                return
+            }
             do {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 let data = try Data(contentsOf: url)
-                let local = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Import_\(UUID().uuidString).json")
+                let ext = url.pathExtension.isEmpty ? "json" : url.pathExtension
+                let local = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Import_\(UUID().uuidString).\(ext)")
                 try data.write(to: local, options: .atomic)
                 importPreview = try store.previewBackup(from: local)
                 importMessage = nil
-            } catch { importMessage = "Preview failed: \(error.localizedDescription)" }
-        case .failure(let error): importMessage = "Import failed: \(error.localizedDescription)"
+            } catch {
+                importMessage = "Preview failed: \(error.localizedDescription)"
+            }
+        case .failure(let error):
+            importMessage = "Import failed: \(error.localizedDescription)"
         }
+    }
+}
+
+struct AppDBCompatibilityView: View {
+    @EnvironmentObject private var store: TallyStore
+    @State private var notificationMessage: String?
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("AppDB-safe Build", systemImage: "checkmark.shield.fill")
+                        .font(.title2.weight(.heavy)).foregroundStyle(.green)
+                    Text("The default unsigned IPA contains only the main application target. This avoids extension and cloud entitlements that limited signing profiles may strip or reject.")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+            }
+
+            Section("Capabilities") {
+                ForEach(TallySigningCapability.all) { capability in
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: capability.systemImage)
+                            .font(.title3).frame(width: 28)
+                            .foregroundStyle(capability.availableInAppDBBuild ? .green : .orange)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(capability.title).font(.headline)
+                            Text(capability.subtitle).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: capability.availableInAppDBBuild ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(capability.availableInAppDBBuild ? .green : .orange)
+                    }
+                }
+            }
+
+            Section("Local Notifications") {
+                Button {
+                    Task {
+                        let granted = await store.requestResetNotificationAuthorization()
+                        notificationMessage = granted ? "Notification permission granted." : "Notification permission was not granted."
+                    }
+                } label: {
+                    Label("Request Notification Permission", systemImage: "bell.badge.fill")
+                }
+                if let notificationMessage {
+                    Text(notificationMessage).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .tallyOLEDBackground()
+        .navigationTitle("Compatibility")
     }
 }
 
@@ -82,6 +249,7 @@ struct SettingsNavigationRow: View {
     let subtitle: String
     let systemImage: String
     var value: String? = nil
+
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: systemImage).font(.title2).frame(width: 34)
@@ -91,7 +259,8 @@ struct SettingsNavigationRow: View {
             }
             Spacer()
             if let value { Text(value).foregroundStyle(.secondary) }
-        }.padding(.vertical, 5)
+        }
+        .padding(.vertical, 5)
     }
 }
 
@@ -126,14 +295,17 @@ struct AppearanceSettingsView: View {
                                     ZStack {
                                         Circle().fill(accent.color.opacity(0.25)).frame(width: 54, height: 54)
                                         Circle().fill(accent.color).frame(width: 34, height: 34)
-                                        if accentRaw == accent.rawValue { Image(systemName: "checkmark").fontWeight(.black).foregroundStyle(.white) }
+                                        if accentRaw == accent.rawValue {
+                                            Image(systemName: "checkmark").fontWeight(.black).foregroundStyle(.white)
+                                        }
                                     }
                                     Text(accent.title).font(.subheadline.weight(.semibold)).foregroundStyle(accent.color)
                                 }
                                 .frame(maxWidth: .infinity).padding(.vertical, 16)
                                 .background(store.theme == .oled ? Color(white: 0.035) : Color.clear, in: RoundedRectangle(cornerRadius: 20))
                                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
-                            }.buttonStyle(.plain)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -153,13 +325,15 @@ struct AppearanceSettingsView: View {
                             Button("Use Custom") {
                                 customHex = customColor.hexString()
                                 accentRaw = StoredAccentColor.customValue
-                            }.buttonStyle(.borderedProminent)
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
                     }
                     .padding(18)
                     .background(store.theme == .oled ? Color(white: 0.035) : Color.clear, in: RoundedRectangle(cornerRadius: 22))
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
-                }.padding()
+                }
+                .padding()
             }
         }
         .navigationTitle("Appearance")
@@ -184,12 +358,18 @@ struct AppIconSettingsView: View {
                                 Text(icon.subtitle).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if icon.isSelected { Image(systemName: "checkmark").font(.title3.weight(.heavy)).foregroundStyle(icon.tint) }
-                        }.padding(.vertical, 6)
-                    }.buttonStyle(.plain)
+                            if icon.isSelected {
+                                Image(systemName: "checkmark").font(.title3.weight(.heavy)).foregroundStyle(icon.tint)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            if let iconMessage { Section { Text(iconMessage).font(.caption).foregroundStyle(.secondary) } }
+            if let iconMessage {
+                Section { Text(iconMessage).font(.caption).foregroundStyle(.secondary) }
+            }
         }
         .tallyOLEDBackground()
         .navigationTitle("App Icon")
@@ -214,26 +394,39 @@ struct AppIconSettingsView: View {
     }
 
     private func setIcon(_ icon: TallyIcon) {
-        guard UIApplication.shared.supportsAlternateIcons else { iconMessage = "This install method does not support alternate icons."; return }
+        #if canImport(UIKit)
+        guard UIApplication.shared.supportsAlternateIcons else {
+            iconMessage = "This install method does not support alternate icons."
+            return
+        }
         UIApplication.shared.setAlternateIconName(icon.iconName) { error in
             iconMessage = error?.localizedDescription ?? "Icon changed to \(icon.title)."
         }
+        #endif
     }
 }
 
 struct ArchivedCountersView: View {
     @EnvironmentObject private var store: TallyStore
     @State private var searchText = ""
+
     private var filtered: [TallyCounter] {
-        searchText.isEmpty ? store.archivedCounters : store.archivedCounters.filter { $0.name.localizedCaseInsensitiveContains(searchText) || $0.displayGroup.localizedCaseInsensitiveContains(searchText) }
+        searchText.isEmpty ? store.archivedCounters : store.archivedCounters.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText) || $0.displayGroup.localizedCaseInsensitiveContains(searchText)
+        }
     }
+
     var body: some View {
         List {
-            if filtered.isEmpty { ContentUnavailableView("Archive Empty", systemImage: "archivebox", description: Text("Archived counters will appear here.")) }
-            else { ForEach(filtered) { ArchivedCounterRow(counter: $0) } }
+            if filtered.isEmpty {
+                ContentUnavailableView("Archive Empty", systemImage: "archivebox", description: Text("Archived counters will appear here."))
+            } else {
+                ForEach(filtered) { ArchivedCounterRow(counter: $0) }
+            }
         }
         .tallyOLEDBackground()
-        .navigationTitle("Archive").searchable(text: $searchText, prompt: "Search archive")
+        .navigationTitle("Archive")
+        .searchable(text: $searchText, prompt: "Search archive")
     }
 }
 
@@ -242,17 +435,26 @@ struct ArchivedCounterRow: View {
     let counter: TallyCounter
     @State private var showingDelete = false
     private var color: Color { TallyStoredColor.color(counter.colorName, fallback: .gray) }
+
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: counter.symbol).foregroundStyle(color).frame(width: 36, height: 36).background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading) { Text(counter.name).font(.headline); Text("\(counter.displayGroup) • value \(counter.value)").font(.caption).foregroundStyle(.secondary) }
+            Image(systemName: counter.symbol)
+                .foregroundStyle(color)
+                .frame(width: 36, height: 36)
+                .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading) {
+                Text(counter.name).font(.headline)
+                Text("\(counter.displayGroup) • value \(counter.value)").font(.caption).foregroundStyle(.secondary)
+            }
             Spacer()
             Menu {
                 Button("Restore", systemImage: "arrow.uturn.backward") { store.restoreCounter(counter) }
                 Button("Delete Forever", systemImage: "trash", role: .destructive) { showingDelete = true }
             } label: { Image(systemName: "ellipsis.circle").font(.title3) }
         }
-        .confirmationDialog("Delete \(counter.name) forever?", isPresented: $showingDelete) { Button("Delete Forever", role: .destructive) { store.permanentlyDeleteCounter(counter) } }
+        .confirmationDialog("Delete \(counter.name) forever?", isPresented: $showingDelete) {
+            Button("Delete", role: .destructive) { store.permanentlyDeleteCounter(counter) }
+        }
     }
 }
 
@@ -260,11 +462,13 @@ struct BackupImportPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     let preview: TallyBackupPreview
     let onImport: (Bool) -> Void
+
     var body: some View {
         NavigationStack {
             List {
                 Section("Backup Details") {
                     LabeledContent("Version", value: preview.version)
+                    LabeledContent("Revision", value: "\(preview.revision)")
                     LabeledContent("Exported", value: preview.exportedAt.formatted(date: .abbreviated, time: .shortened))
                     LabeledContent("Theme", value: preview.themeTitle)
                 }
@@ -272,15 +476,21 @@ struct BackupImportPreviewView: View {
                     LabeledContent("Counters", value: "\(preview.counterCount)")
                     LabeledContent("Active", value: "\(preview.activeCounterCount)")
                     LabeledContent("Archived", value: "\(preview.archivedCounterCount)")
+                    LabeledContent("Folders", value: "\(preview.folderCount)")
                     LabeledContent("History", value: "\(preview.historyCount)")
                     LabeledContent("Sessions", value: "\(preview.sessionCount)")
                 }
                 Section {
-                    Button { onImport(false); dismiss() } label: { Label("Merge Into Current Data", systemImage: "plus.square.on.square") }
-                    Button(role: .destructive) { onImport(true); dismiss() } label: { Label("Replace Current Data", systemImage: "arrow.triangle.2.circlepath") }
+                    Button { onImport(false); dismiss() } label: {
+                        Label("Merge Into Current Data", systemImage: "plus.square.on.square")
+                    }
+                    Button(role: .destructive) { onImport(true); dismiss() } label: {
+                        Label("Replace Current Data", systemImage: "arrow.triangle.2.circlepath")
+                    }
                 }
             }
-            .navigationTitle("Import Preview").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Import Preview")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
     }
@@ -293,12 +503,20 @@ struct TallyIcon: Identifiable, CaseIterable {
     let iconName: String?
     let previewName: String
     let tint: Color
-    var isSelected: Bool { UIApplication.shared.alternateIconName == iconName || (UIApplication.shared.alternateIconName == nil && iconName == nil) }
+
+    var isSelected: Bool {
+        #if canImport(UIKit)
+        return UIApplication.shared.alternateIconName == iconName || (UIApplication.shared.alternateIconName == nil && iconName == nil)
+        #else
+        return iconName == nil
+        #endif
+    }
+
     static let allCases: [TallyIcon] = [
         .init(id: "primary", title: "Classic Blue", subtitle: "The original polished Tally counter", iconName: nil, previewName: "TallyIconClassicBlue", tint: .blue),
         .init(id: "neon", title: "Neon Dark", subtitle: "Electric blue for OLED screens", iconName: "NeonDark", previewName: "TallyIconNeonDark", tint: .blue),
-        .init(id: "glass", title: "Glass", subtitle: "Soft frosted blue", iconName: "Glass", previewName: "TallyIconGlass", tint: .cyan),
-        .init(id: "pearl", title: "Pearl", subtitle: "Bright and minimal", iconName: "Pearl", previewName: "TallyIconPearl", tint: .gray),
+        .init(id: "glass", title: "Glass", subtitle: "Transparent blue glass with bright edge highlights", iconName: "Glass", previewName: "TallyIconGlass", tint: .cyan),
+        .init(id: "pearl", title: "Pearl", subtitle: "Matte ivory with dark metallic details", iconName: "Pearl", previewName: "TallyIconPearl", tint: .gray),
         .init(id: "amber", title: "Amber", subtitle: "Warm golden counter", iconName: "Amber", previewName: "TallyIconAmber", tint: .orange),
         .init(id: "green", title: "Tech Green", subtitle: "Neon productivity", iconName: "TechGreen", previewName: "TallyIconTechGreen", tint: .green),
         .init(id: "purple", title: "Cosmic Purple", subtitle: "Deep violet glow", iconName: "CosmicPurple", previewName: "TallyIconCosmicPurple", tint: .purple),
@@ -308,29 +526,33 @@ struct TallyIcon: Identifiable, CaseIterable {
 
 struct ChangelogView: View {
     @Environment(\.dismiss) private var dismiss
+
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Tally v1.6.1").font(.title2.weight(.heavy))
-                        Text("A focused usability update for faster creation, safer deletion, true OLED styling, and reliable icon previews.").foregroundStyle(.secondary)
-                    }.padding(.vertical, 8)
+                        Text("Tally v2.0").font(.title2.weight(.heavy))
+                        Text("A major AppDB-safe foundation update with stable folders, cross-platform backups, advanced sessions, reset scheduling, and native-feeling organization.")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
                 }
-                Section("v1.6.1") {
-                    ChangelogRow(title: "Compact Style Menus", detail: "Counter color, folder color, and symbol selection now stay inside the creation screen.")
-                    ChangelogRow(title: "Custom Counter Colors", detail: "Choose any custom color for individual counters and folders.")
-                    ChangelogRow(title: "Compact Action Menu", detail: "Shorter labels and grouped actions prevent the counter menu from becoming excessively tall.")
-                    ChangelogRow(title: "Direct Delete", detail: "Permanently delete a counter directly from its action menu after confirmation.")
-                    ChangelogRow(title: "True OLED Mode", detail: "OLED now uses pure black backgrounds and near-black surfaces, while regular Dark remains visibly lighter.")
-                    ChangelogRow(title: "Icon Preview Repair", detail: "App icon previews now load directly from bundled PNG resources with a fallback preview.")
+                Section("v2.0") {
+                    ChangelogRow(title: "Pinned in Place", detail: "Pinned counters remain inside their folder and sort to the top. Unfiled pins stay at the top of Unfiled.")
+                    ChangelogRow(title: "Stable Folder IDs", detail: "Folder relationships no longer depend on names, making rename, import, and sync safer.")
+                    ChangelogRow(title: "Full Backup Schema", detail: "Folders, presets, ordering, preferences, sessions, and history are included in versioned 2.0 backups.")
+                    ChangelogRow(title: "Drag Reordering", detail: "Move counters between folders, reorder inside folders, and reorder folders themselves.")
+                    ChangelogRow(title: "Advanced Sessions", detail: "Pause, resume, restart, and set optional session duration goals.")
+                    ChangelogRow(title: "Scheduled Resets", detail: "Choose time, weekday or month day, carry excess values, and receive local reminders.")
+                    ChangelogRow(title: "AppDB-safe Architecture", detail: "Restricted extension and iCloud capabilities are separated from the unsigned main-app build.")
                 }
-                Section("v1.6") {
-                    ChangelogRow(title: "Counter Detail Pages", detail: "Dedicated dashboards with quick actions, notes, milestones, sessions, recent history, averages, and charts.")
-                    ChangelogRow(title: "Favorites and Folders", detail: "Pinned counters, folder colors, totals, smart resets, milestones, and locking.")
+                Section("Earlier") {
+                    ChangelogRow(title: "Custom Styling", detail: "Custom colors, OLED surfaces, app icon families, milestones, locking, and counter dashboards.")
                 }
             }
-            .navigationTitle("Changelog").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Changelog")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }
     }
@@ -339,5 +561,11 @@ struct ChangelogView: View {
 struct ChangelogRow: View {
     let title: String
     let detail: String
-    var body: some View { VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline); Text(detail).font(.subheadline).foregroundStyle(.secondary) }.padding(.vertical, 3) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.headline)
+            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 3)
+    }
 }
