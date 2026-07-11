@@ -11,21 +11,11 @@ struct TallyApp: App {
                 .environmentObject(store)
                 .preferredColorScheme(store.theme.colorScheme)
                 .onAppear {
-                    store.performScheduledResets()
-                    store.rescheduleAllResetNotifications()
-                    #if TALLY_FULL_SIGNING
-                    TallyFullSigningBridge.shared.publishWidgetSnapshot(from: store)
-                    Task { await TallyFullSigningBridge.shared.updateLiveActivities(from: store) }
-                    #endif
+                    activateAppServices()
                 }
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
-                    store.performScheduledResets()
-                    store.rescheduleAllResetNotifications()
-                    #if TALLY_FULL_SIGNING
-                    TallyFullSigningBridge.shared.publishWidgetSnapshot(from: store)
-                    Task { await TallyFullSigningBridge.shared.updateLiveActivities(from: store) }
-                    #endif
+                    activateAppServices()
                 }
                 .onChange(of: store.counters) { _, _ in
                     #if TALLY_FULL_SIGNING
@@ -38,5 +28,15 @@ struct TallyApp: App {
                     #endif
                 }
         }
+    }
+
+    private func activateAppServices() {
+        store.performScheduledResets()
+        store.rescheduleAllResetNotifications()
+        #if TALLY_FULL_SIGNING
+        _ = TallyFullSigningBridge.shared.consumePendingExtensionActions(into: store)
+        TallyFullSigningBridge.shared.publishWidgetSnapshot(from: store)
+        Task { await TallyFullSigningBridge.shared.updateLiveActivities(from: store) }
+        #endif
     }
 }
