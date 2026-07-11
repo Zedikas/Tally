@@ -6,9 +6,7 @@ import UIKit
 enum TallyStoredColor {
     static let customPrefix = "custom:"
 
-    static func preset(_ raw: String) -> CounterColor? {
-        CounterColor(rawValue: raw)
-    }
+    static func preset(_ raw: String) -> CounterColor? { CounterColor(rawValue: raw) }
 
     static func customHex(_ raw: String) -> String? {
         guard raw.hasPrefix(customPrefix) else { return nil }
@@ -16,9 +14,7 @@ enum TallyStoredColor {
         return Color(hex: hex) == nil ? nil : hex
     }
 
-    static func raw(customHex: String) -> String {
-        customPrefix + normalizedHex(customHex)
-    }
+    static func raw(customHex: String) -> String { customPrefix + normalizedHex(customHex) }
 
     static func normalizedHex(_ value: String) -> String {
         let clean = value.uppercased().filter { $0.isHexDigit }
@@ -50,9 +46,7 @@ struct StoredColorMenu: View {
     var body: some View {
         Menu {
             ForEach(CounterColor.allCases) { option in
-                Button {
-                    rawValue = option.rawValue
-                } label: {
+                Button { rawValue = option.rawValue } label: {
                     Label(option.title, systemImage: rawValue == option.rawValue ? "checkmark.circle.fill" : "circle.fill")
                 }
             }
@@ -109,11 +103,25 @@ struct CustomStoredColorSheet: View {
 }
 
 extension TallyStore {
+    private var folderColorDefaultsKey: String { "tally.folderColors.v161" }
+
+    private func storedFolderColors() -> [String: String] {
+        guard let data = UserDefaults.standard.data(forKey: folderColorDefaultsKey),
+              let values = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return values
+    }
+
     func folderColorRaw(for group: String) -> String {
-        activeCounters.first(where: { $0.displayGroup == group })?.folderColorName ?? CounterColor.gray.rawValue
+        if let stored = storedFolderColors()[group] { return stored }
+        return activeCounters.first(where: { $0.displayGroup == group })?.folderColorName ?? CounterColor.gray.rawValue
     }
 
     func updateFolderColor(group: String, rawValue: String) {
+        var values = storedFolderColors()
+        values[group] = rawValue
+        if let data = try? JSONEncoder().encode(values) {
+            UserDefaults.standard.set(data, forKey: folderColorDefaultsKey)
+        }
         for index in counters.indices where counters[index].displayGroup == group {
             counters[index].folderColorName = rawValue
             counters[index].updatedAt = Date()
