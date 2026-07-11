@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TallyMainTabsView: View {
     private enum Tab: Hashable {
@@ -123,7 +124,8 @@ private struct UnfiledDropDock: View {
         }
         .foregroundStyle(isTargeted ? Color.accentColor : Color.primary)
         .padding(.horizontal, 16)
-        .padding(.vertical, isTargeted ? 13 : 10)
+        .padding(.vertical, isTargeted ? 15 : 11)
+        .frame(maxWidth: .infinity)
         .background(
             isTargeted ? Color.accentColor.opacity(0.16) : Color.clear,
             in: RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -143,34 +145,90 @@ private struct UnfiledDropDock: View {
             y: isTargeted ? 6 : 2
         )
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .dropDestination(for: String.self) { values, _ in
-            guard let payload = values.first,
-                  payload.hasPrefix("counter:"),
-                  let id = UUID(uuidString: String(payload.dropFirst("counter:".count))),
-                  let counter = store.counters.first(where: { $0.id == id }) else {
-                return false
-            }
-
-            let alreadyUnfiled = counter.folderID == nil && store.folder(named: counter.group) == nil
-            guard !alreadyUnfiled else { return false }
-
-            withAnimation(animation) {
-                store.moveCounter(counter, to: nil)
-            }
-            store.performHaptic(.success)
-            return true
-        } isTargeted: { targeted in
-            guard targeted != isTargeted else { return }
-            withAnimation(animation) {
-                isTargeted = targeted
-            }
-            if targeted {
-                store.performHaptic(.selection)
-            }
-        }
+        .onDrop(
+            of: [UTType.plainText.identifier, UTType.text.identifier],
+            delegate: UnfiledDockDropDelegate(
+                store: store,
+                isTargeted: $isTargeted,
+                animation: animation
+            )
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Move counter to Unfiled")
         .accessibilityHint("Drag a counter from a folder and release it here")
         .animation(animation, value: isTargeted)
+    }
+}
+
+private struct UnfiledDockDropDelegate: DropDelegate {
+    let store: TallyStore
+    @Binding var isTargeted: Bool
+    let animation: Animation?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        !info.itemProviders(for: [.plainText, .text]).isEmpty
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard !isTargeted else { return }
+        withAnimation(animation) {
+            isTargeted = true
+        }
+        store.performHaptic(.selection)
+    }
+
+    func dropExited(info: DropInfo) {
+        withAnimation(animation) {
+            isTargeted = false
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [.plainText, .text]).first else {
+            withAnimation(animation) {
+                isTargeted = false
+            }
+            return false
+        }
+
+        provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let payload = object as? NSString else {
+                Task { @MainActor in
+                    withAnimation(animation) {
+                        isTargeted = false
+                    }
+                }
+                return
+            }
+
+            Task { @MainActor in
+                defer {
+                    withAnimation(animation) {
+                        isTargeted = false
+                    }
+                }
+
+                let value = payload as String
+                guard value.hasPrefix("counter:"),
+                      let id = UUID(uuidString: String(value.dropFirst("counter:".count))),
+                      let counter = store.counters.first(where: { $0.id == id }) else {
+                    return
+                }
+
+                let alreadyUnfiled = counter.folderID == nil && store.folder(named: counter.group) == nil
+                guard !alreadyUnfiled else { return }
+
+                withAnimation(animation) {
+                    store.moveCounter(counter, to: nil)
+                }
+                store.performHaptic(.success)
+            }
+        }
+
+        return true
     }
 }
