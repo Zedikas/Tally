@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.6.1 build 9: compact style menus, custom counter/folder colors, direct delete, true OLED, and icon preview repair.
+# Tally v1.6.1 build 9 diagnostic: concise compiler output for Swift failures.
 
 on:
   workflow_dispatch:
@@ -56,8 +56,9 @@ jobs:
           xcodegen generate --spec project.yml
 
       - name: Build unsigned app
+        shell: bash
         run: |
-          set -e
+          set +e
           xcodebuild \
             -project Tally.xcodeproj \
             -scheme Tally \
@@ -68,7 +69,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build > build.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "===== Compiler diagnostics ====="
+            grep -E "(^|[[:space:]])(error:|warning:)|BUILD FAILED|The following build commands failed" build.log | tail -n 200 || true
+            echo "===== Final build context ====="
+            tail -n 120 build.log
+            exit "$status"
+          fi
+          echo "Build succeeded"
 
       - name: Patch app metadata and alternate icon files
         run: |
