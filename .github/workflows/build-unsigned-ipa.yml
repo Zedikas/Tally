@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.7 build 10: duplicate folder implementation removed; quick counter and timer creation retained.
+# Tally 2.0 build 20: AppDB-safe main-app build. Entitlement-dependent extensions stay in project-full.yml.
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ on:
 
 jobs:
   build-unsigned-ipa:
-    name: Build unsigned IPA
+    name: Build AppDB-safe unsigned IPA
     if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '(!F)') }}
     runs-on: macos-latest
     timeout-minutes: 45
@@ -37,6 +37,21 @@ jobs:
             brew install xcodegen
           fi
           xcodegen --version
+
+      - name: Validate AppDB-safe project boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'MARKETING_VERSION: "2.0"' project.yml
+          grep -q 'CURRENT_PROJECT_VERSION: "20"' project.yml
+          if grep -q 'FullSigning' project.yml; then
+            echo "ERROR: project.yml must not include the entitlement-dependent FullSigning sources."
+            exit 1
+          fi
+          test -f project-full.yml
+          test -f FullSigning/Tally.entitlements
+          test -f FullSigning/TallyWidgets.entitlements
+          echo "Default project is isolated from WidgetKit, ActivityKit extension, App Groups, and CloudKit entitlements."
 
       - name: Generate app icon assets
         run: |
@@ -76,7 +91,7 @@ jobs:
             echo "===== Compiler diagnostics ====="
             cat compiler-diagnostics.txt
             echo "===== Final build context ====="
-            tail -n 120 build.log
+            tail -n 160 build.log
             exit "$status"
           fi
           echo "Build succeeded"
@@ -89,6 +104,7 @@ jobs:
           path: |
             build.log
             compiler-diagnostics.txt
+            appdb-validation.txt
           if-no-files-found: warn
           retention-days: 7
 
@@ -105,8 +121,8 @@ jobs:
           ICON_SRC="Tally/Resources/Assets.xcassets/AppIcon.appiconset"
           ALT_ICON_SRC="Tally/Resources/AlternateIcons"
 
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.7" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.7" "$APP_PATH/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 10" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 10" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 2.0" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 2.0" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 20" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 20" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Tally" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Tally" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :UILaunchStoryboardName LaunchScreen" "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c "Add :UILaunchStoryboardName string LaunchScreen" "$APP_PATH/Info.plist"
@@ -146,19 +162,44 @@ jobs:
 
           test -e "$APP_PATH/LaunchScreen.storyboardc" || (echo "ERROR: LaunchScreen.storyboardc missing" && exit 1)
 
+      - name: Verify AppDB-safe application bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/DerivedData -name "Tally.app" -type d | head -n 1)
+          {
+            echo "Tally AppDB-safe validation"
+            echo "App: $APP_PATH"
+            echo "Version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist")"
+            echo "Build: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Info.plist")"
+            echo "Embedded extensions:"
+            find "$APP_PATH" -name '*.appex' -print
+            echo "Embedded provisioning profiles:"
+            find "$APP_PATH" -name 'embedded.mobileprovision' -print
+          } | tee appdb-validation.txt
+
+          if find "$APP_PATH" -name '*.appex' -print -quit | grep -q .; then
+            echo "ERROR: AppDB-safe IPA unexpectedly contains an app extension."
+            exit 1
+          fi
+          if [ -e "$APP_PATH/archived-expanded-entitlements.xcent" ]; then
+            echo "ERROR: unexpected signed entitlements file found."
+            exit 1
+          fi
+
       - name: Package unsigned IPA
         run: |
           set -e
           APP_PATH=$(find build/DerivedData -name "Tally.app" -type d | head -n 1)
-          rm -rf Payload Tally_v1_7_unsigned.ipa Tally_v1_6_1_unsigned.ipa Tally_v1_6_unsigned.ipa
+          rm -rf Payload Tally_v2_0_unsigned.ipa Tally_v1_7_unsigned.ipa Tally_v1_6_1_unsigned.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          /usr/bin/zip -r Tally_v1_7_unsigned.ipa Payload
+          /usr/bin/zip -r Tally_v2_0_unsigned.ipa Payload
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Tally_v1_7_unsigned_ipa
-          path: Tally_v1_7_unsigned.ipa
+          name: Tally_v2_0_unsigned_ipa
+          path: Tally_v2_0_unsigned.ipa
           if-no-files-found: error
           retention-days: 7
