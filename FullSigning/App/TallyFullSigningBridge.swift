@@ -12,6 +12,8 @@ final class TallyFullSigningBridge {
     @discardableResult
     func consumePendingExtensionActions(into store: TallyStore) -> UUID? {
         var requestedCounterID: UUID?
+        var changedSession = false
+
         for action in TallyExtensionActionQueue.drain() {
             let counter: TallyCounter?
             if let id = action.counterID {
@@ -26,12 +28,45 @@ final class TallyFullSigningBridge {
                     store.safeAdjust(counter, by: action.amount)
                     requestedCounterID = counter.id
                 }
+
             case .openCounter:
                 requestedCounterID = counter?.id
+
+            case .incrementSessionCounter:
+                guard let sessionID = action.sessionID,
+                      let session = store.sessions.first(where: { $0.id == sessionID }),
+                      let counterID = session.counterID,
+                      let linkedCounter = store.activeCounters.first(where: { $0.id == counterID }),
+                      !linkedCounter.isLocked else { continue }
+                store.safeAdjust(linkedCounter, by: action.amount)
+                requestedCounterID = linkedCounter.id
+                changedSession = true
+
+            case .toggleSessionPause:
+                guard let sessionID = action.sessionID,
+                      let session = store.sessions.first(where: { $0.id == sessionID && $0.isActive }) else { continue }
+                if session.isPaused {
+                    store.resumeSession(session)
+                } else {
+                    store.pauseSession(session)
+                }
+                requestedCounterID = session.counterID
+                changedSession = true
+
+            case .endSession:
+                guard let sessionID = action.sessionID,
+                      let session = store.sessions.first(where: { $0.id == sessionID && $0.isActive }) else { continue }
+                requestedCounterID = session.counterID
+                store.endSession(session)
+                changedSession = true
             }
         }
+
         if requestedCounterID != nil {
             publishWidgetSnapshot(from: store)
+        }
+        if changedSession {
+            Task { await updateLiveActivities(from: store) }
         }
         return requestedCounterID
     }
