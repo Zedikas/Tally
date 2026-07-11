@@ -17,6 +17,7 @@ targets:
     sources:
       - path: Tally
         excludes:
+          - RootView.swift
           - Resources/Info.plist
           - Resources/Assets.xcassets
           - Resources/AlternateIcons
