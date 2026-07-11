@@ -167,14 +167,36 @@ final class TallyStore: ObservableObject {
     func exportSessionsCSVURL() -> URL? {
         var rows = ["Title,Counter,Started,Ended,DurationSeconds,StartValue,EndValue,Delta,Notes"]
         let formatter = ISO8601DateFormatter()
+
         for session in sessions.reversed() {
-            rows.append([
-                session.title, session.counterName, formatter.string(from: session.startedAt),
-                session.endedAt.map { formatter.string(from: $0) } ?? "", String(Int(session.duration)),
-                String(session.startValue), session.endValue.map(String.init) ?? "",
-                session.delta.map(String.init) ?? "", session.notes
-            ].map(Self.csvEscape).joined(separator: ","))
+            let started = formatter.string(from: session.startedAt)
+            let ended: String
+            if let endedAt = session.endedAt {
+                ended = formatter.string(from: endedAt)
+            } else {
+                ended = ""
+            }
+
+            let duration = String(Int(session.duration))
+            let startValue = String(session.startValue)
+            let endValue = session.endValue.map { String($0) } ?? ""
+            let delta = session.delta.map { String($0) } ?? ""
+
+            let fields: [String] = [
+                session.title,
+                session.counterName,
+                started,
+                ended,
+                duration,
+                startValue,
+                endValue,
+                delta,
+                session.notes
+            ]
+            let escapedFields = fields.map { Self.csvEscape($0) }
+            rows.append(escapedFields.joined(separator: ","))
         }
+
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Tally_Sessions_\(Self.timestamp()).csv")
         do { try rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8); return url } catch { return nil }
     }
@@ -262,7 +284,9 @@ final class TallyStore: ObservableObject {
         normalized.stepValues = TallyCounter.sanitizedStepValues(counter.stepValues)
         normalized.milestones = TallyCounter.sanitizedMilestones(counter.milestones)
         normalized.reachedMilestones = Array(Set(counter.reachedMilestones)).sorted()
-        if CounterColor(rawValue: normalized.folderColorName) == nil { normalized.folderColorName = normalized.colorName }
+        if CounterColor(rawValue: normalized.folderColorName) == nil && TallyStoredColor.customHex(normalized.folderColorName) == nil {
+            normalized.folderColorName = normalized.colorName
+        }
         return normalized
     }
 
