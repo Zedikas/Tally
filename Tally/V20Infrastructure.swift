@@ -7,7 +7,7 @@ import UIKit
 struct TallyEditorCard<Content: View>: View {
     let title: String
     let systemImage: String
-    @ViewBuilder let content: Content
+    let content: Content
 
     init(title: String, systemImage: String, @ViewBuilder content: () -> Content) {
         self.title = title
@@ -66,7 +66,10 @@ struct StepPresetEditor: View {
 }
 
 enum TallyHapticKind {
-    case selection, light, success, warning
+    case selection
+    case light
+    case success
+    case warning
 }
 
 extension TallyStore {
@@ -95,7 +98,9 @@ extension TallyStore {
     }
 
     func cancelResetNotification(for counterID: UUID) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [resetNotificationIdentifier(counterID)])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: [resetNotificationIdentifier(counterID)]
+        )
     }
 
     func rescheduleAllResetNotifications() {
@@ -105,24 +110,22 @@ extension TallyStore {
     }
 
     func scheduleResetNotification(for counter: TallyCounter) {
-        let center = UNUserNotificationCenter.current()
         let identifier = resetNotificationIdentifier(counter.id)
+        let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
+
         guard counter.resetNotificationEnabled,
               counter.resetReminder != .none,
               !counter.isArchived else { return }
 
-        center.getNotificationSettings { [weak self] settings in
-            guard let self else { return }
+        Task { @MainActor in
+            var settings = await center.notificationSettings()
             if settings.authorizationStatus == .notDetermined {
-                Task { @MainActor in
-                    if await self.requestResetNotificationAuthorization() {
-                        self.scheduleResetNotification(for: counter)
-                    }
-                }
-                return
+                _ = await requestResetNotificationAuthorization()
+                settings = await center.notificationSettings()
             }
-            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
+            guard settings.authorizationStatus == .authorized ||
+                    settings.authorizationStatus == .provisional else { return }
 
             let content = UNMutableNotificationContent()
             content.title = "Upcoming reset"
@@ -130,9 +133,11 @@ extension TallyStore {
             content.sound = .default
             content.userInfo = ["counterID": counter.id.uuidString]
 
-            let components = self.notificationDateComponents(for: counter)
+            let components = notificationDateComponents(for: counter)
+            guard !components.isEmpty else { return }
             let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
-            center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
+            let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+            try? await center.add(request)
         }
     }
 
@@ -153,7 +158,11 @@ extension TallyStore {
         case .weekly:
             return calendar.nextDate(
                 after: date,
-                matching: DateComponents(weekday: counter.resetWeekday, hour: counter.resetHour, minute: counter.resetMinute),
+                matching: DateComponents(
+                    weekday: counter.resetWeekday,
+                    hour: counter.resetHour,
+                    minute: counter.resetMinute
+                ),
                 matchingPolicy: .nextTime,
                 repeatedTimePolicy: .first,
                 direction: .forward
@@ -161,7 +170,11 @@ extension TallyStore {
         case .monthly:
             return calendar.nextDate(
                 after: date,
-                matching: DateComponents(day: counter.resetDayOfMonth, hour: counter.resetHour, minute: counter.resetMinute),
+                matching: DateComponents(
+                    day: counter.resetDayOfMonth,
+                    hour: counter.resetHour,
+                    minute: counter.resetMinute
+                ),
                 matchingPolicy: .nextTime,
                 repeatedTimePolicy: .first,
                 direction: .forward
@@ -188,6 +201,7 @@ extension TallyStore {
 
         guard !eligibleIDs.isEmpty else { return }
         registerUndoSnapshot(label: "Automatic Reset")
+
         for id in eligibleIDs {
             guard let index = counters.firstIndex(where: { $0.id == id }) else { continue }
             let before = counters[index].value
@@ -227,7 +241,11 @@ extension TallyStore {
         case .weekly:
             return calendar.nextDate(
                 after: date,
-                matching: DateComponents(weekday: counter.resetWeekday, hour: counter.resetHour, minute: counter.resetMinute),
+                matching: DateComponents(
+                    weekday: counter.resetWeekday,
+                    hour: counter.resetHour,
+                    minute: counter.resetMinute
+                ),
                 matchingPolicy: .previousTimePreservingSmallerComponents,
                 repeatedTimePolicy: .first,
                 direction: .backward
@@ -235,7 +253,11 @@ extension TallyStore {
         case .monthly:
             return calendar.nextDate(
                 after: date,
-                matching: DateComponents(day: counter.resetDayOfMonth, hour: counter.resetHour, minute: counter.resetMinute),
+                matching: DateComponents(
+                    day: counter.resetDayOfMonth,
+                    hour: counter.resetHour,
+                    minute: counter.resetMinute
+                ),
                 matchingPolicy: .previousTimePreservingSmallerComponents,
                 repeatedTimePolicy: .first,
                 direction: .backward
@@ -245,8 +267,11 @@ extension TallyStore {
 
     private func notificationDateComponents(for counter: TallyCounter) -> DateComponents {
         let calendar = Calendar.current
-        let nextReset = nextResetDate(for: counter) ?? Date()
-        let warningDate = calendar.date(byAdding: .minute, value: -5, to: nextReset) ?? nextReset
+        guard let nextReset = nextResetDate(for: counter),
+              let warningDate = calendar.date(byAdding: .minute, value: -5, to: nextReset) else {
+            return DateComponents()
+        }
+
         switch counter.resetReminder {
         case .none:
             return DateComponents()
@@ -264,6 +289,27 @@ extension TallyStore {
     }
 }
 
+private extension DateComponents {
+    var isEmpty: Bool {
+        calendar == nil &&
+        timeZone == nil &&
+        era == nil &&
+        year == nil &&
+        month == nil &&
+        day == nil &&
+        hour == nil &&
+        minute == nil &&
+        second == nil &&
+        nanosecond == nil &&
+        weekday == nil &&
+        weekdayOrdinal == nil &&
+        quarter == nil &&
+        weekOfMonth == nil &&
+        weekOfYear == nil &&
+        yearForWeekOfYear == nil
+    }
+}
+
 struct TallySigningCapability: Identifiable {
     let id: String
     let title: String
@@ -272,10 +318,34 @@ struct TallySigningCapability: Identifiable {
     let availableInAppDBBuild: Bool
 
     static let all: [TallySigningCapability] = [
-        .init(id: "local", title: "Local counters, sessions, notifications and backups", subtitle: "Fully available in the AppDB-safe build.", systemImage: "iphone", availableInAppDBBuild: true),
-        .init(id: "shortcuts", title: "App Shortcuts", subtitle: "Implemented in the main app without an extension target.", systemImage: "command", availableInAppDBBuild: true),
-        .init(id: "widgets", title: "Widgets and Live Activities", subtitle: "Source-ready, but requires a separately signed extension target.", systemImage: "rectangle.3.group", availableInAppDBBuild: false),
-        .init(id: "cloud", title: "Automatic CloudKit sync", subtitle: "Source-ready, but requires iCloud entitlements in the provisioning profile.", systemImage: "icloud", availableInAppDBBuild: false)
+        .init(
+            id: "local",
+            title: "Local counters, sessions, notifications and backups",
+            subtitle: "Fully available in the AppDB-safe build.",
+            systemImage: "iphone",
+            availableInAppDBBuild: true
+        ),
+        .init(
+            id: "shortcuts",
+            title: "App Shortcuts",
+            subtitle: "Implemented in the main app without an extension target.",
+            systemImage: "command",
+            availableInAppDBBuild: true
+        ),
+        .init(
+            id: "widgets",
+            title: "Widgets and Live Activities",
+            subtitle: "Source-ready, but requires a separately signed extension target.",
+            systemImage: "rectangle.3.group",
+            availableInAppDBBuild: false
+        ),
+        .init(
+            id: "cloud",
+            title: "Automatic CloudKit sync",
+            subtitle: "Source-ready, but requires iCloud entitlements in the provisioning profile.",
+            systemImage: "icloud",
+            availableInAppDBBuild: false
+        )
     ]
 }
 
@@ -285,9 +355,21 @@ struct TallyOnboardingView: View {
     @State private var page = 0
 
     private let pages: [(String, String, String)] = [
-        ("Organize your counters", "Create folders with their own colors, symbols, steps, and reset presets.", "folder.fill.badge.plus"),
-        ("Pin without removing", "Pinned counters remain inside their folder and simply move to the top of that folder.", "pin.fill"),
-        ("AppDB-safe by design", "Local notifications, backups, sync packages, Shortcuts, and all core features work without restricted extension entitlements.", "checkmark.shield.fill")
+        (
+            "Organize your counters",
+            "Create folders with their own colors, symbols, steps, and reset presets.",
+            "folder.fill.badge.plus"
+        ),
+        (
+            "Pin without removing",
+            "Pinned counters remain inside their folder and simply move to the top of that folder.",
+            "pin.fill"
+        ),
+        (
+            "AppDB-safe by design",
+            "Local notifications, backups, sync packages, Shortcuts, and all core features work without restricted extension entitlements.",
+            "checkmark.shield.fill"
+        )
     ]
 
     var body: some View {
@@ -297,7 +379,7 @@ struct TallyOnboardingView: View {
                 Image(systemName: pages[page].2)
                     .font(.system(size: 72, weight: .bold))
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(Color.accentColor)
                 VStack(spacing: 12) {
                     Text(pages[page].0)
                         .font(.largeTitle.weight(.black))
@@ -321,7 +403,11 @@ struct TallyOnboardingView: View {
                         store.preferences.onboardingCompleted = true
                         dismiss()
                     } else {
-                        withAnimation(.snappy) { page += 1 }
+                        if store.preferences.reducedAnimations {
+                            page += 1
+                        } else {
+                            withAnimation(.snappy) { page += 1 }
+                        }
                     }
                 }
                 .buttonStyle(.borderedProminent)
