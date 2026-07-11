@@ -37,6 +37,18 @@ struct TallyApp: App {
         _ = TallyFullSigningBridge.shared.consumePendingExtensionActions(into: store)
         TallyFullSigningBridge.shared.publishWidgetSnapshot(from: store)
         Task { await TallyFullSigningBridge.shared.updateLiveActivities(from: store) }
+
+        let shouldSync = store.preferences.lastSyncAt.map {
+            Date().timeIntervalSince($0) > 300
+        } ?? true
+        if shouldSync {
+            Task {
+                try? await TallyCloudAutoSyncCoordinator.shared.synchronize(store: store)
+                await MainActor.run {
+                    TallyFullSigningBridge.shared.publishWidgetSnapshot(from: store)
+                }
+            }
+        }
         #endif
     }
 }
