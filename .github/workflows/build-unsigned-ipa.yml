@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.6.1 build 9 diagnostic: concise compiler output for Swift failures.
+# Tally v1.6.1 build 9 diagnostic: preserve the complete Xcode log as an artifact.
 
 on:
   workflow_dispatch:
@@ -56,6 +56,7 @@ jobs:
           xcodegen generate --spec project.yml
 
       - name: Build unsigned app
+        id: build
         shell: bash
         run: |
           set +e
@@ -71,14 +72,31 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build > build.log 2>&1
           status=$?
+          grep -E "(^|[[:space:]])(error:|warning:)|BUILD FAILED|The following build commands failed" build.log > compiler-diagnostics.txt || true
           if [ "$status" -ne 0 ]; then
             echo "===== Compiler diagnostics ====="
-            grep -E "(^|[[:space:]])(error:|warning:)|BUILD FAILED|The following build commands failed" build.log | tail -n 200 || true
+            cat compiler-diagnostics.txt
             echo "===== Final build context ====="
             tail -n 120 build.log
-            exit "$status"
+          else
+            echo "Build succeeded"
           fi
-          echo "Build succeeded"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tally_build_diagnostics
+          path: |
+            build.log
+            compiler-diagnostics.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop after failed build
+        if: steps.build.outputs.status != '0'
+        run: exit 1
 
       - name: Patch app metadata and alternate icon files
         run: |
