@@ -1,6 +1,6 @@
 name: Build Unsigned IPA
 
-# Tally v1.7 build 10: independent folders, drag-and-drop organization, folder presets, quick timers, redesigned sessions, corrected colors, and distinct icons.
+# Tally v1.7 build 10: duplicate folder implementation removed; quick counter and timer creation retained.
 
 on:
   workflow_dispatch:
