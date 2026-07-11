@@ -11,8 +11,11 @@
     "pauseable sessions",
     "advanced reset schedules",
     "local notifications",
-    "App Intents"
+    "App Intents",
+    "distinct Counter and Completed symbols",
+    "unit and UI test targets"
   ],
   "entitlementDependentFeatures": "Available through project-full.yml",
-  "pinBehavior": "Pinned counters remain at the top of their assigned folder"
+  "pinBehavior": "Pinned counters remain at the top of their assigned folder",
+  "buildTrigger": "finalized"
 }
