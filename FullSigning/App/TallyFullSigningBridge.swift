@@ -9,6 +9,33 @@ final class TallyFullSigningBridge {
 
     private init() {}
 
+    @discardableResult
+    func consumePendingExtensionActions(into store: TallyStore) -> UUID? {
+        var requestedCounterID: UUID?
+        for action in TallyExtensionActionQueue.drain() {
+            let counter: TallyCounter?
+            if let id = action.counterID {
+                counter = store.activeCounters.first(where: { $0.id == id })
+            } else {
+                counter = store.activeCounters.first(where: \.isPinned) ?? store.activeCounters.first
+            }
+
+            switch action.kind {
+            case .increment:
+                if let counter, !counter.isLocked {
+                    store.safeAdjust(counter, by: action.amount)
+                    requestedCounterID = counter.id
+                }
+            case .openCounter:
+                requestedCounterID = counter?.id
+            }
+        }
+        if requestedCounterID != nil {
+            publishWidgetSnapshot(from: store)
+        }
+        return requestedCounterID
+    }
+
     func publishWidgetSnapshot(from store: TallyStore) {
         let snapshots = store.activeCounters
             .sorted { lhs, rhs in
@@ -36,7 +63,12 @@ final class TallyFullSigningBridge {
     }
 
     func startLiveActivity(for session: TallySession, store: TallyStore) async {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled,
+              session.isActive,
+              !Activity<TallySessionActivityAttributes>.activities.contains(where: {
+                  $0.attributes.sessionID == session.id
+              }) else { return }
+
         let attributes = TallySessionActivityAttributes(
             sessionID: session.id,
             title: session.title,
@@ -54,11 +86,19 @@ final class TallyFullSigningBridge {
     }
 
     func updateLiveActivities(from store: TallyStore) async {
+        let existingIDs = Set(
+            Activity<TallySessionActivityAttributes>.activities.map { $0.attributes.sessionID }
+        )
+        for session in store.activeSessions where !existingIDs.contains(session.id) {
+            await startLiveActivity(for: session, store: store)
+        }
+
         for activity in Activity<TallySessionActivityAttributes>.activities {
             guard let session = store.sessions.first(where: { $0.id == activity.attributes.sessionID }) else {
                 await activity.end(nil, dismissalPolicy: .immediate)
                 continue
             }
+
             if session.isActive {
                 let content = ActivityContent(
                     state: activityState(for: session, store: store),
@@ -85,7 +125,10 @@ final class TallyFullSigningBridge {
         }
     }
 
-    private func activityState(for session: TallySession, store: TallyStore) -> TallySessionActivityAttributes.ContentState {
+    private func activityState(
+        for session: TallySession,
+        store: TallyStore
+    ) -> TallySessionActivityAttributes.ContentState {
         let counterValue = session.counterID.flatMap { id in
             store.counters.first(where: { $0.id == id })?.value
         }
@@ -133,9 +176,10 @@ actor TallyCloudSyncCoordinator {
         } catch let error as CKError where error.code == .unknownItem {
             record = CKRecord(recordType: "TallyState", recordID: recordID)
         }
-        record["schemaVersion"] = "2.0" as CKRecordValue
-        record["revision"] = backup.revision as CKRecordValue
-        record["exportedAt"] = backup.exportedAt as CKRecordValue
+
+        record["schemaVersion"] = "2.0" as NSString
+        record["revision"] = NSNumber(value: backup.revision)
+        record["exportedAt"] = backup.exportedAt as NSDate
         record["payload"] = CKAsset(fileURL: temporaryURL)
         _ = try await database.save(record)
     }
@@ -151,6 +195,7 @@ actor TallyCloudSyncCoordinator {
             .appendingPathComponent("TallyCloudImport-\(UUID().uuidString).json")
         try FileManager.default.copyItem(at: sourceURL, to: localURL)
         defer { try? FileManager.default.removeItem(at: localURL) }
+
         try await MainActor.run {
             try store.importBackup(from: localURL, replaceExisting: replaceExisting)
             store.preferences.lastSyncAt = Date()
