@@ -53,6 +53,33 @@ jobs:
           test -f FullSigning/TallyWidgets.entitlements
           echo "Default project is isolated from WidgetKit, ActivityKit extension, App Groups, and CloudKit entitlements."
 
+      - name: Normalize Swift drag source for current compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Tally/CountersView.swift")
+          text = path.read_text()
+          replacements = {
+              "Color.accentColor.opacity(isUnfiledTargeted ? 0.16 : 0.055)": "Color.accentColor.opacity(Double(isUnfiledTargeted ? 0.16 : 0.055))",
+              "Color.accentColor.opacity(isUnfiledTargeted ? 0.9 : 0.2)": "Color.accentColor.opacity(Double(isUnfiledTargeted ? 0.9 : 0.2))",
+              "tint.opacity(targeted ? 0.13 : 0.035)": "tint.opacity(Double(targeted ? 0.13 : 0.035))",
+              "tint.opacity(targeted ? 0.82 : 0)": "tint.opacity(Double(targeted ? 0.82 : 0.0))",
+              ".opacity(dragging ? 0.38 : 1)": ".opacity(Double(dragging ? 0.38 : 1.0))",
+              "if let sourceFolder = folder(from: payload)": "if let sourceFolder = self.folder(from: payload)",
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+
+          if [ -e Tally/TallyFolderDragPayload.swift ]; then
+            echo "ERROR: obsolete duplicate TallyFolderDragPayload.swift is still present."
+            exit 1
+          fi
+
       - name: Generate app icon assets
         run: |
           set -e
