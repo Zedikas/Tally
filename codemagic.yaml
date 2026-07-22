@@ -26,7 +26,7 @@ workflows:
       - name: Validate AppDB extension configuration
         script: |
           set -euo pipefail
-          grep -q 'CURRENT_PROJECT_VERSION: "21"' project.yml
+          grep -q 'CURRENT_PROJECT_VERSION: "22"' project.yml
           grep -q 'TallyWidgets:' project.yml
           grep -q 'TALLY_APPDB_EXTENSIONS' project.yml
           test -f FullSigning/TallyAppDB.entitlements
@@ -78,8 +78,8 @@ workflows:
           rm -rf \
             "$CM_BUILD_DIR/DerivedData" \
             Payload \
-            Tally_v2_0_build21_AppDB_extensions.ipa \
-            Tally_v2_0_build21_AppDB_extensions.zip \
+            Tally_v2_0_build22_AppDB_extensions.ipa \
+            Tally_v2_0_build22_AppDB_extensions.zip \
             ipa-contents.txt appdb-validation.txt xcodebuild.log
 
           xcodebuild \
@@ -104,7 +104,7 @@ workflows:
           ALT_ICON_SRC='Tally/Resources/AlternateIcons'
 
           /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 2.0' "$APP_PATH/Info.plist" || true
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 21' "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 22' "$APP_PATH/Info.plist" || true
           /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Tally' "$APP_PATH/Info.plist" || true
           /usr/libexec/PlistBuddy -c 'Set :CFBundleIconName AppIcon' "$APP_PATH/Info.plist" || true
           /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivities true' "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c 'Add :NSSupportsLiveActivities bool true' "$APP_PATH/Info.plist"
@@ -199,8 +199,8 @@ workflows:
         script: |
           set -euo pipefail
           APP_PATH=$(find "$CM_BUILD_DIR/DerivedData" -name 'Tally.app' -type d | head -n 1)
-          IPA_NAME='Tally_v2_0_build21_AppDB_extensions.ipa'
-          ZIP_NAME='Tally_v2_0_build21_AppDB_extensions.zip'
+          IPA_NAME='Tally_v2_0_build22_AppDB_extensions.ipa'
+          ZIP_NAME='Tally_v2_0_build22_AppDB_extensions.zip'
 
           rm -rf Payload "$IPA_NAME" "$ZIP_NAME"
           mkdir -p Payload
@@ -221,8 +221,8 @@ workflows:
       - name: Print verified build summary
         script: |
           set -euo pipefail
-          IPA_NAME='Tally_v2_0_build21_AppDB_extensions.ipa'
-          ZIP_NAME='Tally_v2_0_build21_AppDB_extensions.zip'
+          IPA_NAME='Tally_v2_0_build22_AppDB_extensions.ipa'
+          ZIP_NAME='Tally_v2_0_build22_AppDB_extensions.zip'
 
           cat appdb-validation.txt
           echo 'IPA SHA-256:'
@@ -237,8 +237,8 @@ workflows:
           /usr/bin/unzip -l "$ZIP_NAME"
 
     artifacts:
-      - Tally_v2_0_build21_AppDB_extensions.zip
-      - Tally_v2_0_build21_AppDB_extensions.ipa
+      - Tally_v2_0_build22_AppDB_extensions.zip
+      - Tally_v2_0_build22_AppDB_extensions.ipa
       - appdb-validation.txt
       - ipa-contents.txt
       - xcodebuild.log
