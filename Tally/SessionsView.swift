@@ -36,12 +36,13 @@ struct SessionsView: View {
 
                         if store.activeSessions.isEmpty, let last = store.finishedSessions.first {
                             Button {
-                                _ = store.startSession(
+                                let session = store.startSession(
                                     counterID: last.counterID,
                                     title: last.title,
                                     notes: last.notes,
                                     goalDuration: last.goalDuration
                                 )
+                                Task { await TallyFullSigningBridge.shared.startLiveActivity(for: session, store: store) }
                             } label: {
                                 Label("Resume Last Session", systemImage: "arrow.clockwise.circle.fill")
                                     .font(.headline)
@@ -178,7 +179,13 @@ struct NewSessionView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") {
-                        store.startSession(counterID: selectedCounterID, title: title, notes: notes, goalDuration: goalDuration)
+                        let session = store.startSession(
+                            counterID: selectedCounterID,
+                            title: title,
+                            notes: notes,
+                            goalDuration: goalDuration
+                        )
+                        Task { await TallyFullSigningBridge.shared.startLiveActivity(for: session, store: store) }
                         dismiss()
                     }
                 }
@@ -210,11 +217,11 @@ struct ActiveSessionRow: View {
                     Spacer()
                     Menu {
                         if session.isPaused {
-                            Button("Resume Session", systemImage: "play.circle") { store.resumeSession(session) }
+                            Button("Resume Session", systemImage: "play.circle") { resume() }
                         } else {
-                            Button("Pause Session", systemImage: "pause.circle") { store.pauseSession(session) }
+                            Button("Pause Session", systemImage: "pause.circle") { pause() }
                         }
-                        Button("End Session", systemImage: "stop.circle") { store.endSession(session) }
+                        Button("End Session", systemImage: "stop.circle") { finish() }
                         Button("Cancel Session", systemImage: "xmark.circle", role: .destructive) { showingCancelConfirmation = true }
                     } label: {
                         Image(systemName: "ellipsis.circle").font(.title3)
@@ -231,10 +238,10 @@ struct ActiveSessionRow: View {
 
                 HStack(spacing: 10) {
                     Button(session.isPaused ? "Resume" : "Pause") {
-                        session.isPaused ? store.resumeSession(session) : store.pauseSession(session)
+                        session.isPaused ? resume() : pause()
                     }
                     .buttonStyle(.bordered)
-                    Button("Finish") { store.endSession(session) }
+                    Button("Finish") { finish() }
                         .buttonStyle(.borderedProminent)
                 }
             }
@@ -242,8 +249,30 @@ struct ActiveSessionRow: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .confirmationDialog("Cancel session?", isPresented: $showingCancelConfirmation) {
-            Button("Cancel Session", role: .destructive) { store.cancelSession(session) }
+            Button("Cancel Session", role: .destructive) { cancel() }
         } message: { Text("Canceling removes this active session without saving a summary.") }
+    }
+
+    private func pause() {
+        store.pauseSession(session)
+        Task { await TallyFullSigningBridge.shared.updateLiveActivities(from: store) }
+    }
+
+    private func resume() {
+        store.resumeSession(session)
+        Task { await TallyFullSigningBridge.shared.updateLiveActivities(from: store) }
+    }
+
+    private func finish() {
+        let id = session.id
+        store.endSession(session)
+        Task { await TallyFullSigningBridge.shared.endLiveActivity(sessionID: id, store: store) }
+    }
+
+    private func cancel() {
+        let id = session.id
+        store.cancelSession(session)
+        Task { await TallyFullSigningBridge.shared.endLiveActivity(sessionID: id, store: store) }
     }
 }
 
@@ -270,7 +299,13 @@ struct FinishedSessionRow: View {
             Spacer()
             Menu {
                 Button("Start Again", systemImage: "arrow.clockwise") {
-                    store.startSession(counterID: session.counterID, title: session.title, notes: session.notes, goalDuration: session.goalDuration)
+                    let restarted = store.startSession(
+                        counterID: session.counterID,
+                        title: session.title,
+                        notes: session.notes,
+                        goalDuration: session.goalDuration
+                    )
+                    Task { await TallyFullSigningBridge.shared.startLiveActivity(for: restarted, store: store) }
                 }
                 Button("Delete Session", systemImage: "trash", role: .destructive) { showingDeleteConfirmation = true }
             } label: { Image(systemName: "ellipsis.circle").font(.title3) }
