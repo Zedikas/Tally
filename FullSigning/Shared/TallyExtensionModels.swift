@@ -22,9 +22,33 @@ struct TallyWidgetSnapshot: Codable, Hashable {
 
 enum TallySharedContainer {
     static let appGroup = "group.com.samua.tally"
-    static let widgetExtensionBundleIdentifier = "com.samua.tally.widgets"
+    static let expectedWidgetExtensionBundleIdentifier = "com.samua.tally.widgets"
     static let widgetSnapshotKey = "tally.widget.snapshot.v2"
     static let widgetSnapshotFileName = "TallyWidgetSnapshot-v2.json"
+
+    /// Resolve the identifier from the final installed bundle when possible instead of
+    /// assuming a re-signing service preserved the build-time identifier verbatim.
+    static var widgetExtensionBundleIdentifier: String {
+        if Bundle.main.bundleURL.pathExtension == "appex" {
+            return Bundle.main.bundleIdentifier ?? expectedWidgetExtensionBundleIdentifier
+        }
+
+        if let plugInsURL = Bundle.main.builtInPlugInsURL,
+           let urls = try? FileManager.default.contentsOfDirectory(
+               at: plugInsURL,
+               includingPropertiesForKeys: nil,
+               options: [.skipsHiddenFiles]
+           ) {
+            for url in urls where url.pathExtension == "appex" {
+                if url.lastPathComponent == "TallyWidgets.appex",
+                   let identifier = Bundle(url: url)?.bundleIdentifier {
+                    return identifier
+                }
+            }
+        }
+
+        return expectedWidgetExtensionBundleIdentifier
+    }
 
     /// A real app-group container is the strongest runtime proof that the final
     /// provisioning profile preserved the App Groups entitlement after AppDB re-signing.
@@ -87,15 +111,16 @@ enum TallySharedContainer {
         }
 
         // Apple documents that a containing app can modify preferences for one of its
-        // own app extensions. Publish the same snapshot directly into the widget
-        // extension's preferences domain as a fallback for signing methods that preserve
-        // the extension but do not provision the App Group entitlement.
+        // own app extensions. Publish the same snapshot directly into the actual signed
+        // widget extension's preferences domain as a fallback for signing methods that
+        // preserve the extension but do not provision the App Group entitlement.
+        let extensionID = widgetExtensionBundleIdentifier
         CFPreferencesSetAppValue(
             widgetSnapshotKey as CFString,
             data as CFData,
-            widgetExtensionBundleIdentifier as CFString
+            extensionID as CFString
         )
-        if CFPreferencesAppSynchronize(widgetExtensionBundleIdentifier as CFString) {
+        if CFPreferencesAppSynchronize(extensionID as CFString) {
             wroteSnapshot = true
         }
 
