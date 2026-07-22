@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import CoreFoundation
 
 struct TallyPendingExtensionAction: Codable, Identifiable, Hashable {
     enum Kind: String, Codable {
@@ -36,20 +37,59 @@ enum TallyExtensionActionQueue {
     private static let key = "tally.extension.pending-actions.v2"
 
     static func append(_ action: TallyPendingExtensionAction) {
-        guard let defaults = UserDefaults(suiteName: TallySharedContainer.appGroup) else { return }
-        var actions = read(from: defaults)
-        actions.append(action)
-        actions = Array(actions.suffix(50))
-        if let data = try? JSONEncoder().encode(actions) {
-            defaults.set(data, forKey: key)
+        var actions = readFromCurrentProcessDefaults()
+
+        // Prefer the shared App Group queue when it is genuinely available.
+        if let defaults = UserDefaults(suiteName: TallySharedContainer.appGroup) {
+            actions.append(contentsOf: read(from: defaults))
         }
+
+        actions = deduplicated(actions + [action])
+        actions = Array(actions.suffix(50))
+        guard let data = try? JSONEncoder().encode(actions) else { return }
+
+        if let defaults = UserDefaults(suiteName: TallySharedContainer.appGroup) {
+            defaults.set(data, forKey: key)
+            defaults.synchronize()
+        }
+
+        // Always keep a copy in the process's own preferences domain. When the intent
+        // runs in TallyWidgets.appex this becomes the extension domain, which the
+        // containing Tally app can read as a fallback even if App Groups were stripped.
+        UserDefaults.standard.set(data, forKey: key)
+        UserDefaults.standard.synchronize()
     }
 
     static func drain() -> [TallyPendingExtensionAction] {
-        guard let defaults = UserDefaults(suiteName: TallySharedContainer.appGroup) else { return [] }
-        let actions = read(from: defaults)
-        defaults.removeObject(forKey: key)
-        return actions
+        var actions: [TallyPendingExtensionAction] = []
+
+        if let defaults = UserDefaults(suiteName: TallySharedContainer.appGroup) {
+            actions.append(contentsOf: read(from: defaults))
+            defaults.removeObject(forKey: key)
+            defaults.synchronize()
+        }
+
+        // Actions may have executed directly in the main app process.
+        actions.append(contentsOf: readFromCurrentProcessDefaults())
+        UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.synchronize()
+
+        // Or they may have executed inside TallyWidgets.appex. The containing app is
+        // allowed to access its own extension's preferences, so drain that domain too.
+        let extensionID = TallySharedContainer.widgetExtensionBundleIdentifier
+        if let value = CFPreferencesCopyAppValue(key as CFString, extensionID as CFString),
+           let data = value as? Data,
+           let queued = try? JSONDecoder().decode([TallyPendingExtensionAction].self, from: data) {
+            actions.append(contentsOf: queued)
+        }
+        CFPreferencesSetAppValue(key as CFString, nil, extensionID as CFString)
+        _ = CFPreferencesAppSynchronize(extensionID as CFString)
+
+        return deduplicated(actions).sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private static func readFromCurrentProcessDefaults() -> [TallyPendingExtensionAction] {
+        read(from: UserDefaults.standard)
     }
 
     private static func read(from defaults: UserDefaults) -> [TallyPendingExtensionAction] {
@@ -58,6 +98,11 @@ enum TallyExtensionActionQueue {
             return []
         }
         return actions
+    }
+
+    private static func deduplicated(_ actions: [TallyPendingExtensionAction]) -> [TallyPendingExtensionAction] {
+        var seen = Set<UUID>()
+        return actions.filter { seen.insert($0.id).inserted }
     }
 }
 
