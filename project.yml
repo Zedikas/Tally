@@ -23,6 +23,8 @@ targets:
           - Resources/AlternateIcons
       - path: FullSigning/Shared
       - path: FullSigning/App
+        excludes:
+          - TallyCloudAutoSyncCoordinator.swift
     resources:
       - path: Tally/Resources
     info:
