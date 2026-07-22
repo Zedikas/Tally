@@ -1,0 +1,227 @@
+workflows:
+  tally-appdb-extensions:
+    name: Tally - AppDB Widgets & Live Activities
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+
+    environment:
+      xcode: 26.5
+      vars:
+        LANG: en_US.UTF-8
+        LC_ALL: en_US.UTF-8
+
+    scripts:
+      - name: Prepare build toolchain
+        script: |
+          set -euo pipefail
+          echo "Codemagic build directory: $CM_BUILD_DIR"
+          xcodebuild -version
+          swift --version
+          python3 --version
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Validate AppDB extension configuration
+        script: |
+          set -euo pipefail
+          grep -q 'CURRENT_PROJECT_VERSION: "21"' project.yml
+          grep -q 'TallyWidgets:' project.yml
+          grep -q 'TALLY_APPDB_EXTENSIONS' project.yml
+          test -f FullSigning/TallyAppDB.entitlements
+          test -f FullSigning/TallyWidgets.entitlements
+          test -f FullSigning/Shared/TallyExtensionModels.swift
+          test -f FullSigning/Shared/TallyExtensionIntents.swift
+          test -f FullSigning/TallyWidgets/TallyWidgets.swift
+          grep -q 'group.com.samua.tally' FullSigning/TallyAppDB.entitlements
+          grep -q 'group.com.samua.tally' FullSigning/TallyWidgets.entitlements
+          /usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' Tally/Resources/Info.plist | grep -q true
+
+      - name: Normalize Swift source and generate assets
+        script: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Tally/CountersView.swift')
+          text = path.read_text()
+          replacements = {
+              'Color.accentColor.opacity(isUnfiledTargeted ? 0.16 : 0.055)': 'Color.accentColor.opacity(Double(isUnfiledTargeted ? 0.16 : 0.055))',
+              'Color.accentColor.opacity(isUnfiledTargeted ? 0.9 : 0.2)': 'Color.accentColor.opacity(Double(isUnfiledTargeted ? 0.9 : 0.2))',
+              'tint.opacity(targeted ? 0.13 : 0.035)': 'tint.opacity(Double(targeted ? 0.13 : 0.035))',
+              'tint.opacity(targeted ? 0.82 : 0)': 'tint.opacity(Double(targeted ? 0.82 : 0.0))',
+              '.opacity(dragging ? 0.38 : 1)': '.opacity(Double(dragging ? 0.38 : 1.0))',
+              'if let sourceFolder = folder(from: payload)': 'if let sourceFolder = self.folder(from: payload)',
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+
+          test ! -e Tally/TallyFolderDragPayload.swift
+          swiftc -typecheck Scripts/generate_icons.swift
+          swift Scripts/generate_icons.swift
+          test -f Tally/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png
+          test -f Tally/Resources/AlternateIcons/TallyIconClassicBlue.png
+
+      - name: Generate Xcode project
+        script: |
+          set -euo pipefail
+          xcodegen generate --spec project.yml
+          test -d Tally.xcodeproj
+
+      - name: Build unsigned app with WidgetKit extension
+        script: |
+          set -euo pipefail
+          set -o pipefail
+          rm -rf \
+            "$CM_BUILD_DIR/DerivedData" \
+            Payload \
+            Tally_v2_0_build21_AppDB_extensions.ipa \
+            Tally_v2_0_build21_AppDB_extensions.zip \
+            ipa-contents.txt appdb-validation.txt xcodebuild.log
+
+          xcodebuild \
+            -project Tally.xcodeproj \
+            -scheme Tally \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$CM_BUILD_DIR/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build | tee xcodebuild.log
+
+      - name: Patch metadata and alternate icons
+        script: |
+          set -euo pipefail
+          APP_PATH=$(find "$CM_BUILD_DIR/DerivedData" -name 'Tally.app' -type d | head -n 1)
+          test -n "$APP_PATH"
+
+          ICON_SRC='Tally/Resources/Assets.xcassets/AppIcon.appiconset'
+          ALT_ICON_SRC='Tally/Resources/AlternateIcons'
+
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 2.0' "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 21' "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Tally' "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleIconName AppIcon' "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivities true' "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c 'Add :NSSupportsLiveActivities bool true' "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivitiesFrequentUpdates true' "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c 'Add :NSSupportsLiveActivitiesFrequentUpdates bool true' "$APP_PATH/Info.plist"
+
+          cp "$ICON_SRC/icon-60x60@2x-iphone.png" "$APP_PATH/Icon-60@2x.png"
+          cp "$ICON_SRC/icon-60x60@3x-iphone.png" "$APP_PATH/Icon-60@3x.png"
+          cp "$ICON_SRC/icon-1024.png" "$APP_PATH/iTunesArtwork"
+          cp "$ICON_SRC/icon-1024.png" "$APP_PATH/iTunesArtwork@2x"
+          cp "$ALT_ICON_SRC"/*.png "$APP_PATH"/
+
+          /usr/libexec/PlistBuddy -c 'Delete :CFBundleIcons' "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIcons dict' "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIcons:CFBundlePrimaryIcon dict' "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles array' "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles:0 string Icon-60' "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName string AppIcon' "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIcons:CFBundlePrimaryIcon:UIPrerenderedIcon bool false' "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :CFBundleIcons:CFBundleAlternateIcons dict' "$APP_PATH/Info.plist"
+
+          add_alt_icon() {
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:$1 dict" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:$1:CFBundleIconFiles array" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:$1:CFBundleIconFiles:0 string $2" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:$1:UIPrerenderedIcon bool false" "$APP_PATH/Info.plist"
+          }
+
+          add_alt_icon ClassicBlue TallyIconClassicBlue
+          add_alt_icon NeonDark TallyIconNeonDark
+          add_alt_icon Glass TallyIconGlass
+          add_alt_icon Pearl TallyIconPearl
+          add_alt_icon Amber TallyIconAmber
+          add_alt_icon TechGreen TallyIconTechGreen
+          add_alt_icon CosmicPurple TallyIconCosmicPurple
+          add_alt_icon Synthwave TallyIconSynthwave
+
+          test -e "$APP_PATH/LaunchScreen.storyboardc"
+
+      - name: Verify and seed extension entitlements
+        script: |
+          set -euo pipefail
+          APP_PATH=$(find "$CM_BUILD_DIR/DerivedData" -name 'Tally.app' -type d | head -n 1)
+          APPEX="$APP_PATH/PlugIns/TallyWidgets.appex"
+
+          test -d "$APPEX"
+          test -f "$APPEX/Info.plist"
+          test -f "$APPEX/TallyWidgets"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" = 'com.samua.tally'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")" = 'com.samua.tally.widgets'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APPEX/Info.plist")" = 'com.apple.widgetkit-extension'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PATH/Info.plist")" = 'true'
+          file "$APP_PATH/Tally" | grep -q arm64
+          file "$APPEX/TallyWidgets" | grep -q arm64
+
+          codesign --force --sign - --timestamp=none --entitlements FullSigning/TallyWidgets.entitlements "$APPEX"
+          codesign --force --sign - --timestamp=none --entitlements FullSigning/TallyAppDB.entitlements "$APP_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+
+          {
+            echo 'Tally Codemagic/AppDB validation'
+            echo "App: $APP_PATH"
+            echo "Widget extension: $APPEX"
+            echo 'Embedded extensions:'
+            find "$APP_PATH/PlugIns" -maxdepth 2 -name '*.appex' -print
+            echo 'Main executable:'
+            file "$APP_PATH/Tally"
+            echo 'Extension executable:'
+            file "$APPEX/TallyWidgets"
+            echo 'Main entitlements:'
+            codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true
+            echo 'Extension entitlements:'
+            codesign -d --entitlements :- "$APPEX" 2>/dev/null || true
+          } | tee appdb-validation.txt
+
+      - name: Package, verify and ZIP AppDB-ready IPA
+        script: |
+          set -euo pipefail
+          APP_PATH=$(find "$CM_BUILD_DIR/DerivedData" -name 'Tally.app' -type d | head -n 1)
+          IPA_NAME='Tally_v2_0_build21_AppDB_extensions.ipa'
+          ZIP_NAME='Tally_v2_0_build21_AppDB_extensions.zip'
+
+          rm -rf Payload "$IPA_NAME" "$ZIP_NAME"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          /usr/bin/zip -r "$IPA_NAME" Payload
+
+          /usr/bin/unzip -l "$IPA_NAME" | tee ipa-contents.txt
+          grep -q 'Payload/Tally.app/PlugIns/TallyWidgets.appex/Info.plist' ipa-contents.txt
+          grep -q 'Payload/Tally.app/PlugIns/TallyWidgets.appex/TallyWidgets' ipa-contents.txt
+
+          /usr/bin/zip -9 -j "$ZIP_NAME" "$IPA_NAME"
+          /usr/bin/unzip -tq "$ZIP_NAME"
+          test "$(/usr/bin/unzip -Z1 "$ZIP_NAME")" = "$IPA_NAME"
+          test -s "$IPA_NAME"
+          test -s "$ZIP_NAME"
+
+      - name: Print verified build summary
+        script: |
+          set -euo pipefail
+          IPA_NAME='Tally_v2_0_build21_AppDB_extensions.ipa'
+          ZIP_NAME='Tally_v2_0_build21_AppDB_extensions.zip'
+
+          cat appdb-validation.txt
+          echo 'IPA SHA-256:'
+          shasum -a 256 "$IPA_NAME"
+          echo 'IPA size:'
+          stat -f '%z bytes' "$IPA_NAME"
+          echo 'ZIP SHA-256:'
+          shasum -a 256 "$ZIP_NAME"
+          echo 'ZIP size:'
+          stat -f '%z bytes' "$ZIP_NAME"
+          echo 'ZIP contents:'
+          /usr/bin/unzip -l "$ZIP_NAME"
+
+    artifacts:
+      - Tally_v2_0_build21_AppDB_extensions.zip
+      - Tally_v2_0_build21_AppDB_extensions.ipa
+      - appdb-validation.txt
+      - ipa-contents.txt
+      - xcodebuild.log
