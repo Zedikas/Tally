@@ -110,6 +110,16 @@ workflows:
           /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivities true' "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c 'Add :NSSupportsLiveActivities bool true' "$APP_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivitiesFrequentUpdates true' "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c 'Add :NSSupportsLiveActivitiesFrequentUpdates bool true' "$APP_PATH/Info.plist"
 
+          # The previously working AppDB-safe pipeline explicitly restored this key
+          # after xcodebuild. Without modern launch metadata iOS can run the app in a
+          # legacy compatibility canvas, which matches the observed letterboxing/zoom.
+          /usr/libexec/PlistBuddy -c 'Set :UILaunchStoryboardName LaunchScreen' "$APP_PATH/Info.plist" || /usr/libexec/PlistBuddy -c 'Add :UILaunchStoryboardName string LaunchScreen' "$APP_PATH/Info.plist"
+
+          # Keep the final unsigned bundle explicitly iPhone-native before AppDB re-signs it.
+          /usr/libexec/PlistBuddy -c 'Delete :UIDeviceFamily' "$APP_PATH/Info.plist" || true
+          /usr/libexec/PlistBuddy -c 'Add :UIDeviceFamily array' "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :UIDeviceFamily:0 integer 1' "$APP_PATH/Info.plist"
+
           cp "$ICON_SRC/icon-60x60@2x-iphone.png" "$APP_PATH/Icon-60@2x.png"
           cp "$ICON_SRC/icon-60x60@3x-iphone.png" "$APP_PATH/Icon-60@3x.png"
           cp "$ICON_SRC/icon-1024.png" "$APP_PATH/iTunesArtwork"
@@ -142,6 +152,8 @@ workflows:
           add_alt_icon Synthwave TallyIconSynthwave
 
           test -e "$APP_PATH/LaunchScreen.storyboardc"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' "$APP_PATH/Info.plist")" = 'LaunchScreen'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$APP_PATH/Info.plist")" = '1'
 
       - name: Verify and seed extension entitlements
         script: |
@@ -156,6 +168,8 @@ workflows:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")" = 'com.samua.tally.widgets'
           test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APPEX/Info.plist")" = 'com.apple.widgetkit-extension'
           test "$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PATH/Info.plist")" = 'true'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' "$APP_PATH/Info.plist")" = 'LaunchScreen'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$APP_PATH/Info.plist")" = '1'
           file "$APP_PATH/Tally" | grep -q arm64
           file "$APPEX/TallyWidgets" | grep -q arm64
 
@@ -167,6 +181,8 @@ workflows:
             echo 'Tally Codemagic/AppDB validation'
             echo "App: $APP_PATH"
             echo "Widget extension: $APPEX"
+            echo "Launch storyboard: $(/usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' "$APP_PATH/Info.plist")"
+            echo "Device family: $(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$APP_PATH/Info.plist")"
             echo 'Embedded extensions:'
             find "$APP_PATH/PlugIns" -maxdepth 2 -name '*.appex' -print
             echo 'Main executable:'
@@ -194,6 +210,7 @@ workflows:
           /usr/bin/unzip -l "$IPA_NAME" | tee ipa-contents.txt
           grep -q 'Payload/Tally.app/PlugIns/TallyWidgets.appex/Info.plist' ipa-contents.txt
           grep -q 'Payload/Tally.app/PlugIns/TallyWidgets.appex/TallyWidgets' ipa-contents.txt
+          grep -q 'Payload/Tally.app/LaunchScreen.storyboardc/' ipa-contents.txt
 
           /usr/bin/zip -9 -j "$ZIP_NAME" "$IPA_NAME"
           /usr/bin/unzip -tq "$ZIP_NAME"
