@@ -124,8 +124,10 @@ struct TallyCounterWidgetView: View {
                     Text(counter.folderName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-        } else {
+        } else if TallySharedContainer.hasSharedContainerAccess {
             ContentUnavailableView("No Counters", systemImage: "number.square")
+        } else {
+            ContentUnavailableView("Shared Data Unavailable", systemImage: "exclamationmark.triangle")
         }
     }
 }
@@ -158,7 +160,11 @@ struct TallyPinnedCountersWidgetView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Tally", systemImage: "number.circle.fill").font(.headline)
             if counters.isEmpty {
-                Text("Pin a counter to show it here.").foregroundStyle(.secondary)
+                if TallySharedContainer.hasSharedContainerAccess {
+                    Text("Open Tally once to publish your counters.").foregroundStyle(.secondary)
+                } else {
+                    Text("Shared app-group data is unavailable in this signed build.").foregroundStyle(.secondary)
+                }
             } else {
                 ForEach(counters) { counter in
                     HStack(spacing: 10) {
@@ -195,10 +201,17 @@ struct TallySessionLiveActivity: Widget {
                     )
                     .font(.headline)
                     Spacer()
-                    Text(durationText(context.state.elapsedSeconds)).monospacedDigit().font(.title3.bold())
+                    liveDurationText(context.state)
+                        .monospacedDigit()
+                        .font(.title3.bold())
                 }
                 Text(context.attributes.counterName).font(.caption).foregroundStyle(.secondary)
-                if let progress = context.state.progress {
+                if let goal = context.attributes.goalDuration, goal > 0, !context.state.isPaused {
+                    ProgressView(
+                        timerInterval: context.state.timerStartDate...context.state.timerStartDate.addingTimeInterval(goal),
+                        countsDown: false
+                    )
+                } else if let progress = context.state.progress {
                     ProgressView(value: progress)
                 }
                 if let value = context.state.counterValue {
@@ -252,7 +265,7 @@ struct TallySessionLiveActivity: Widget {
                     Image(systemName: context.state.isPaused ? "pause.fill" : "timer")
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(durationText(context.state.elapsedSeconds)).monospacedDigit()
+                    liveDurationText(context.state).monospacedDigit()
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(context.attributes.title).font(.headline).lineLimit(1)
@@ -299,7 +312,7 @@ struct TallySessionLiveActivity: Widget {
             } compactLeading: {
                 Image(systemName: context.state.isPaused ? "pause.fill" : "timer")
             } compactTrailing: {
-                Text(durationText(context.state.elapsedSeconds)).monospacedDigit()
+                liveDurationText(context.state).monospacedDigit()
             } minimal: {
                 Image(systemName: context.state.isPaused ? "pause.fill" : "timer")
             }
@@ -322,12 +335,12 @@ struct TallyQuickIncrementControl: ControlWidget {
     }
 }
 
-private func durationText(_ seconds: Int) -> String {
-    let safe = max(0, seconds)
-    let hours = safe / 3600
-    let minutes = (safe % 3600) / 60
-    let remainder = safe % 60
-    return hours > 0
-        ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
-        : String(format: "%02d:%02d", minutes, remainder)
+private func liveDurationText(_ state: TallySessionActivityAttributes.ContentState) -> Text {
+    let timerEnd = state.timerStartDate.addingTimeInterval(10 * 365 * 24 * 60 * 60)
+    return Text(
+        timerInterval: state.timerStartDate...timerEnd,
+        pauseTime: state.timerPauseDate,
+        countsDown: false,
+        showsHours: true
+    )
 }
