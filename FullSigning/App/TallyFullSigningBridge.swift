@@ -1,7 +1,9 @@
 import Foundation
 import ActivityKit
-import CloudKit
 import WidgetKit
+#if TALLY_FULL_SIGNING
+import CloudKit
+#endif
 
 @MainActor
 final class TallyFullSigningBridge {
@@ -176,6 +178,7 @@ final class TallyFullSigningBridge {
     }
 }
 
+#if TALLY_FULL_SIGNING
 actor TallyCloudSyncCoordinator {
     static let shared = TallyCloudSyncCoordinator()
 
@@ -237,3 +240,4 @@ actor TallyCloudSyncCoordinator {
         }
     }
 }
+#endif
