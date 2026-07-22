@@ -113,7 +113,10 @@ struct TallyExtensionOpenCounterIntent: AppIntent {
     }
 }
 
-struct TallyExtensionSessionActionIntent: AppIntent {
+// Live Activity buttons require a LiveActivityIntent rather than a plain AppIntent.
+// This is still an AppIntent (LiveActivityIntent inherits AppIntent), so the same
+// shared action-queue implementation remains available to both app and extension.
+struct TallyExtensionSessionActionIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Control Tally Session"
     static var description = IntentDescription("Pause, resume, finish, or increment the counter linked to a Live Activity.")
     static var openAppWhenRun = true
