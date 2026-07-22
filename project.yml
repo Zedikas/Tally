@@ -79,7 +79,7 @@ targets:
         SKIP_INSTALL: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         CODE_SIGN_ENTITLEMENTS: FullSigning/TallyWidgets.entitlements
-        OTHER_SWIFT_FLAGS: "$(inherited) -D TALLY_APPDB_EXTENSIONS"
+        OTHER_SWIFT_FLAGS: "$(inherited) -D TALLY_APPDB_EXTENSIONS -D TALLY_WIDGET_EXTENSION"
 
   TallyTests:
     type: bundle.unit-test
