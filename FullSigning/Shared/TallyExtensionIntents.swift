@@ -39,7 +39,6 @@ enum TallyExtensionActionQueue {
     static func append(_ action: TallyPendingExtensionAction) {
         var actions = readFromCurrentProcessDefaults()
 
-        // Prefer the shared App Group queue when it is genuinely available.
         if let defaults = UserDefaults(suiteName: TallySharedContainer.appGroup) {
             actions.append(contentsOf: read(from: defaults))
         }
@@ -53,9 +52,6 @@ enum TallyExtensionActionQueue {
             defaults.synchronize()
         }
 
-        // Always keep a copy in the process's own preferences domain. When the intent
-        // runs in TallyWidgets.appex this becomes the extension domain, which the
-        // containing Tally app can read as a fallback even if App Groups were stripped.
         UserDefaults.standard.set(data, forKey: key)
         UserDefaults.standard.synchronize()
     }
@@ -69,13 +65,10 @@ enum TallyExtensionActionQueue {
             defaults.synchronize()
         }
 
-        // Actions may have executed directly in the main app process.
         actions.append(contentsOf: readFromCurrentProcessDefaults())
         UserDefaults.standard.removeObject(forKey: key)
         UserDefaults.standard.synchronize()
 
-        // Or they may have executed inside TallyWidgets.appex. The containing app is
-        // allowed to access its own extension's preferences, so drain that domain too.
         let extensionID = TallySharedContainer.widgetExtensionBundleIdentifier
         if let value = CFPreferencesCopyAppValue(key as CFString, extensionID as CFString),
            let data = value as? Data,
@@ -161,7 +154,10 @@ struct TallyExtensionOpenCounterIntent: AppIntent {
 struct TallyExtensionSessionActionIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Control Tally Session"
     static var description = IntentDescription("Pause, resume, finish, or increment the counter linked to a Live Activity.")
-    static var openAppWhenRun = true
+
+    // LiveActivityIntent already tells iOS to execute this intent in Tally's app process.
+    // Keeping this false prevents a Lock Screen button from foregrounding the UI.
+    static var openAppWhenRun = false
 
     @Parameter(title: "Session ID", default: "")
     var sessionID: String
@@ -185,16 +181,16 @@ struct TallyExtensionSessionActionIntent: LiveActivityIntent {
             return .result(dialog: "That Tally session is no longer available.")
         }
 
+        #if TALLY_WIDGET_EXTENSION
+        // This copy exists only so the widget target can compile the shared intent type.
+        // LiveActivityIntent execution is routed by iOS to the containing app process,
+        // where the implementation below updates persistent Tally state directly.
         let kind: TallyPendingExtensionAction.Kind
         switch command {
-        case "end":
-            kind = .endSession
-        case "increment":
-            kind = .incrementSessionCounter
-        default:
-            kind = .toggleSessionPause
+        case "end": kind = .endSession
+        case "increment": kind = .incrementSessionCounter
+        default: kind = .toggleSessionPause
         }
-
         TallyExtensionActionQueue.append(
             TallyPendingExtensionAction(
                 kind: kind,
@@ -203,5 +199,47 @@ struct TallyExtensionSessionActionIntent: LiveActivityIntent {
             )
         )
         return .result(dialog: "Updating the Tally session…")
+        #else
+        let message = await Task { @MainActor in
+            let store = TallyStore()
+
+            guard let session = store.sessions.first(where: { $0.id == id }) else {
+                if command == "end" {
+                    await TallyFullSigningBridge.shared.endLiveActivity(sessionID: id, store: store)
+                    return "Finished the Live Activity."
+                }
+                return "That Tally session is no longer available."
+            }
+
+            switch command {
+            case "end":
+                store.endSession(session)
+                await TallyFullSigningBridge.shared.endLiveActivity(sessionID: id, store: store)
+                return "Finished \(session.title)."
+
+            case "increment":
+                guard let counterID = session.counterID,
+                      let counter = store.activeCounters.first(where: { $0.id == counterID }),
+                      !counter.isLocked else {
+                    return "This session does not have an adjustable counter."
+                }
+                store.safeAdjust(counter, by: min(max(amount, -9999), 9999))
+                await TallyFullSigningBridge.shared.updateLiveActivities(from: store)
+                TallyFullSigningBridge.shared.publishWidgetSnapshot(from: store)
+                return "Updated \(counter.name)."
+
+            default:
+                if session.isPaused {
+                    store.resumeSession(session)
+                } else {
+                    store.pauseSession(session)
+                }
+                await TallyFullSigningBridge.shared.updateLiveActivities(from: store)
+                return session.isPaused ? "Paused \(session.title)." : "Updated \(session.title)."
+            }
+        }.value
+
+        return .result(dialog: IntentDialog(stringLiteral: message))
+        #endif
     }
 }
