@@ -147,7 +147,7 @@ final class TallyFullSigningBridge {
                     state: activityState(for: session, store: store),
                     staleDate: Date()
                 )
-                await activity.end(content, dismissalPolicy: .after(.now + 60))
+                await activity.end(content, dismissalPolicy: .immediate)
             }
         }
     }
@@ -158,7 +158,7 @@ final class TallyFullSigningBridge {
             let content = session.map {
                 ActivityContent(state: activityState(for: $0, store: store), staleDate: Date())
             }
-            await activity.end(content, dismissalPolicy: .after(.now + 60))
+            await activity.end(content, dismissalPolicy: .immediate)
         }
     }
 
