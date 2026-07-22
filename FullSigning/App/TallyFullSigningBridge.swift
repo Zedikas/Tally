@@ -93,7 +93,7 @@ final class TallyFullSigningBridge {
                 )
             }
 
-        TallySharedContainer.writeWidgetSnapshot(
+        _ = TallySharedContainer.writeWidgetSnapshot(
             TallyWidgetSnapshot(generatedAt: Date(), counters: Array(snapshots))
         )
         WidgetCenter.shared.reloadAllTimelines()
@@ -169,8 +169,13 @@ final class TallyFullSigningBridge {
         let counterValue = session.counterID.flatMap { id in
             store.counters.first(where: { $0.id == id })?.value
         }
+        let now = Date()
+        let elapsed = max(0, session.duration)
+
         return .init(
-            elapsedSeconds: max(0, Int(session.duration)),
+            elapsedSeconds: Int(elapsed),
+            timerStartDate: now.addingTimeInterval(-elapsed),
+            timerPauseDate: session.isPaused ? now : nil,
             isPaused: session.isPaused,
             counterValue: counterValue,
             progress: session.progress
