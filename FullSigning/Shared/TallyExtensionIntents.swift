@@ -66,11 +66,11 @@ struct TallyExtensionIncrementIntent: AppIntent {
     static var description = IntentDescription("Increment a Tally counter from a widget or Control Center.")
     static var openAppWhenRun = true
 
-    @Parameter(title: "Counter ID")
-    var counterID: String = ""
+    @Parameter(title: "Counter ID", default: "")
+    var counterID: String
 
-    @Parameter(title: "Amount")
-    var amount: Int = 1
+    @Parameter(title: "Amount", default: 1)
+    var amount: Int
 
     init() {}
 
@@ -93,8 +93,8 @@ struct TallyExtensionOpenCounterIntent: AppIntent {
     static var title: LocalizedStringResource = "Open Tally Counter"
     static var openAppWhenRun = true
 
-    @Parameter(title: "Counter ID")
-    var counterID: String = ""
+    @Parameter(title: "Counter ID", default: "")
+    var counterID: String
 
     init() {}
 
@@ -113,22 +113,19 @@ struct TallyExtensionOpenCounterIntent: AppIntent {
     }
 }
 
-// Live Activity buttons require a LiveActivityIntent rather than a plain AppIntent.
-// This is still an AppIntent (LiveActivityIntent inherits AppIntent), so the same
-// shared action-queue implementation remains available to both app and extension.
 struct TallyExtensionSessionActionIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "Control Tally Session"
     static var description = IntentDescription("Pause, resume, finish, or increment the counter linked to a Live Activity.")
     static var openAppWhenRun = true
 
-    @Parameter(title: "Session ID")
-    var sessionID: String = ""
+    @Parameter(title: "Session ID", default: "")
+    var sessionID: String
 
-    @Parameter(title: "Action")
-    var command: String = "toggle"
+    @Parameter(title: "Action", default: "toggle")
+    var command: String
 
-    @Parameter(title: "Amount")
-    var amount: Int = 1
+    @Parameter(title: "Amount", default: 1)
+    var amount: Int
 
     init() {}
 
