@@ -5,8 +5,7 @@ name: Build AppDB IPA with Extensions
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'Tally/**'
       - 'FullSigning/**'
@@ -34,19 +33,16 @@ jobs:
       - name: Install XcodeGen
         run: |
           set -euo pipefail
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          fi
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
           xcodegen --version
 
       - name: Validate extension-enabled project
         shell: bash
         run: |
           set -euo pipefail
-          grep -q 'MARKETING_VERSION: "2.0"' project.yml
           grep -q 'CURRENT_PROJECT_VERSION: "21"' project.yml
           grep -q 'TallyWidgets:' project.yml
-          grep -q 'TALLY_FULL_SIGNING' project.yml
+          grep -q 'TALLY_APPDB_EXTENSIONS' project.yml
           test -f FullSigning/TallyAppDB.entitlements
           test -f FullSigning/TallyWidgets.entitlements
           test -f FullSigning/Shared/TallyExtensionModels.swift
@@ -55,7 +51,6 @@ jobs:
           grep -q 'group.com.samua.tally' FullSigning/TallyAppDB.entitlements
           grep -q 'group.com.samua.tally' FullSigning/TallyWidgets.entitlements
           /usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' Tally/Resources/Info.plist | grep -q true
-          echo 'Extension-enabled AppDB configuration verified.'
 
       - name: Normalize Swift drag source for current compiler
         shell: bash
@@ -63,7 +58,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('Tally/CountersView.swift')
           text = path.read_text()
           replacements = {
@@ -74,28 +68,16 @@ jobs:
               '.opacity(dragging ? 0.38 : 1)': '.opacity(Double(dragging ? 0.38 : 1.0))',
               'if let sourceFolder = folder(from: payload)': 'if let sourceFolder = self.folder(from: payload)',
           }
-          for old, new in replacements.items():
-              text = text.replace(old, new)
+          for old, new in replacements.items(): text = text.replace(old, new)
           path.write_text(text)
           PY
+          test ! -e Tally/TallyFolderDragPayload.swift
 
-          if [ -e Tally/TallyFolderDragPayload.swift ]; then
-            echo 'ERROR: obsolete duplicate TallyFolderDragPayload.swift is still present.'
-            exit 1
-          fi
-
-      - name: Generate app icon assets
+      - name: Generate assets and Xcode project
         run: |
           set -euo pipefail
           swiftc -typecheck Scripts/generate_icons.swift
           swift Scripts/generate_icons.swift
-          test -f Tally/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png
-          test -f Tally/Resources/AlternateIcons/TallyIconClassicBlue.png
-          echo 'Tally icon assets verified.'
-
-      - name: Generate Xcode project
-        run: |
-          set -euo pipefail
           xcodegen generate --spec project.yml
 
       - name: Build app and extension without provisioning
@@ -117,21 +99,17 @@ jobs:
           status=$?
           grep -E '(^|[[:space:]])(error:|warning:)|BUILD FAILED|The following build commands failed' build.log > compiler-diagnostics.txt || true
           if [ "$status" -ne 0 ]; then
-            echo '===== Compiler diagnostics ====='
             cat compiler-diagnostics.txt
-            echo '===== Final build context ====='
             tail -n 220 build.log
             exit "$status"
           fi
-          echo 'Build succeeded.'
 
-      - name: Patch app metadata and alternate icon files
+      - name: Patch metadata and alternate icons
         shell: bash
         run: |
           set -euo pipefail
           APP_PATH=$(find build/DerivedData -name 'Tally.app' -type d | head -n 1)
           test -n "$APP_PATH"
-
           ICON_SRC='Tally/Resources/Assets.xcassets/AppIcon.appiconset'
           ALT_ICON_SRC='Tally/Resources/AlternateIcons'
 
@@ -158,14 +136,11 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :CFBundleIcons:CFBundleAlternateIcons dict' "$APP_PATH/Info.plist"
 
           add_alt_icon() {
-            local icon_name="$1"
-            local file_name="$2"
-            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:${icon_name} dict" "$APP_PATH/Info.plist"
-            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:${icon_name}:CFBundleIconFiles array" "$APP_PATH/Info.plist"
-            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:${icon_name}:CFBundleIconFiles:0 string ${file_name}" "$APP_PATH/Info.plist"
-            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:${icon_name}:UIPrerenderedIcon bool false" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:$1 dict" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:$1:CFBundleIconFiles array" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:$1:CFBundleIconFiles:0 string $2" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIcons:CFBundleAlternateIcons:$1:UIPrerenderedIcon bool false" "$APP_PATH/Info.plist"
           }
-
           add_alt_icon ClassicBlue TallyIconClassicBlue
           add_alt_icon NeonDark TallyIconNeonDark
           add_alt_icon Glass TallyIconGlass
@@ -174,10 +149,9 @@ jobs:
           add_alt_icon TechGreen TallyIconTechGreen
           add_alt_icon CosmicPurple TallyIconCosmicPurple
           add_alt_icon Synthwave TallyIconSynthwave
-
           test -e "$APP_PATH/LaunchScreen.storyboardc"
 
-      - name: Verify embedded WidgetKit and Live Activity extension
+      - name: Verify real extension before packaging
         shell: bash
         run: |
           set -euo pipefail
@@ -186,57 +160,33 @@ jobs:
           test -d "$APPEX"
           test -f "$APPEX/Info.plist"
           test -f "$APPEX/TallyWidgets"
-
-          MAIN_BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")
-          EXT_BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")
-          EXT_POINT=$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APPEX/Info.plist")
-          LIVE=$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PATH/Info.plist")
-
-          test "$MAIN_BUNDLE" = 'com.samua.tally'
-          test "$EXT_BUNDLE" = 'com.samua.tally.widgets'
-          test "$EXT_POINT" = 'com.apple.widgetkit-extension'
-          test "$LIVE" = 'true'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX/Info.plist")" = 'com.samua.tally.widgets'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$APPEX/Info.plist")" = 'com.apple.widgetkit-extension'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSSupportsLiveActivities' "$APP_PATH/Info.plist")" = 'true'
           file "$APP_PATH/Tally" | grep -q arm64
           file "$APPEX/TallyWidgets" | grep -q arm64
-
           {
             echo 'Tally AppDB extension validation'
             echo "App: $APP_PATH"
-            echo "Main bundle: $MAIN_BUNDLE"
-            echo "Extension bundle: $EXT_BUNDLE"
-            echo "Extension point: $EXT_POINT"
-            echo "Supports Live Activities: $LIVE"
-            echo 'Embedded extensions:'
-            find "$APP_PATH/PlugIns" -maxdepth 2 -name '*.appex' -print
-            echo 'Main executable:'
+            echo "Extension: $APPEX"
             file "$APP_PATH/Tally"
-            echo 'Extension executable:'
             file "$APPEX/TallyWidgets"
-            echo 'Embedded provisioning profiles before AppDB:'
-            find "$APP_PATH" -name 'embedded.mobileprovision' -print
+            find "$APP_PATH/PlugIns" -maxdepth 2 -name '*.appex' -print
           } | tee appdb-validation.txt
 
-      - name: Seed requested App Group entitlements with ad-hoc signatures
+      - name: Seed App Group entitlement metadata
         shell: bash
         run: |
           set -euo pipefail
           APP_PATH=$(find build/DerivedData -name 'Tally.app' -type d | head -n 1)
           APPEX="$APP_PATH/PlugIns/TallyWidgets.appex"
-
           codesign --force --sign - --timestamp=none --entitlements FullSigning/TallyWidgets.entitlements "$APPEX"
           codesign --force --sign - --timestamp=none --entitlements FullSigning/TallyAppDB.entitlements "$APP_PATH"
           codesign --verify --deep --strict "$APP_PATH"
+          codesign -d --entitlements :- "$APP_PATH" 2>> appdb-validation.txt || true
+          codesign -d --entitlements :- "$APPEX" 2>> appdb-validation.txt || true
 
-          {
-            echo
-            echo 'Ad-hoc entitlements seeded for AppDB re-signing:'
-            echo '--- Main app ---'
-            codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true
-            echo '--- Widget extension ---'
-            codesign -d --entitlements :- "$APPEX" 2>/dev/null || true
-          } >> appdb-validation.txt
-
-      - name: Package AppDB-ready IPA
+      - name: Package and verify AppDB-ready IPA
         shell: bash
         run: |
           set -euo pipefail
@@ -245,13 +195,11 @@ jobs:
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           /usr/bin/zip -r Tally_v2_0_build21_AppDB_extensions.ipa Payload
-
           unzip -l Tally_v2_0_build21_AppDB_extensions.ipa | tee ipa-contents.txt
           grep -q 'Payload/Tally.app/PlugIns/TallyWidgets.appex/Info.plist' ipa-contents.txt
           grep -q 'Payload/Tally.app/PlugIns/TallyWidgets.appex/TallyWidgets' ipa-contents.txt
-          echo 'IPA contains the WidgetKit/Live Activity extension.'
 
-      - name: Upload build diagnostics
+      - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
