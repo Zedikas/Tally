@@ -1,5 +1,8 @@
 import AppIntents
 import Foundation
+#if TALLY_APPDB_EXTENSIONS || TALLY_FULL_SIGNING
+import ActivityKit
+#endif
 
 struct IncrementTallyCounterIntent: AppIntent {
     static var title: LocalizedStringResource = "Increment Tally Counter"
@@ -69,7 +72,7 @@ struct StartTallySessionIntent: AppIntent {
     var goalMinutes: Int
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let message = await MainActor.run { () -> String in
+        let message = await Task { @MainActor in
             let store = TallyStore()
             let trimmed = counterName.trimmingCharacters(in: .whitespacesAndNewlines)
             let counter = trimmed.isEmpty ? nil : store.activeCounters.first(where: {
@@ -85,11 +88,51 @@ struct StartTallySessionIntent: AppIntent {
                 notes: "Started from Shortcuts",
                 goalDuration: goal
             )
+
+            #if TALLY_APPDB_EXTENSIONS || TALLY_FULL_SIGNING
+            await TallyFullSigningBridge.shared.startLiveActivity(for: session, store: store)
+            #endif
+
             return "Started \(session.title)."
-        }
+        }.value
         return .result(dialog: IntentDialog(stringLiteral: message))
     }
 }
+
+#if TALLY_APPDB_EXTENSIONS || TALLY_FULL_SIGNING
+struct TestTallyLiveActivityIntent: AppIntent {
+    static var title: LocalizedStringResource = "Test Tally Live Activity"
+    static var description = IntentDescription("Start a five-minute diagnostic Tally session and request its Live Activity immediately.")
+    static var openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let message = await Task { @MainActor in
+            guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+                return "Live Activities are disabled for Tally in iOS Settings. Enable them, then run this test again."
+            }
+
+            let store = TallyStore()
+            let session = store.startSession(
+                counterID: nil,
+                title: "Live Activity Test",
+                notes: "Diagnostic Live Activity test",
+                goalDuration: 5 * 60
+            )
+
+            await TallyFullSigningBridge.shared.startLiveActivity(for: session, store: store)
+
+            let isRunning = Activity<TallySessionActivityAttributes>.activities.contains {
+                $0.attributes.sessionID == session.id
+            }
+            return isRunning
+                ? "Live Activity started. Lock your iPhone now and look near the bottom of the Lock Screen."
+                : "Tally requested the Live Activity, but iOS did not report it as active."
+        }.value
+
+        return .result(dialog: IntentDialog(stringLiteral: message))
+    }
+}
+#endif
 
 struct OpenTallyIntent: AppIntent {
     static var title: LocalizedStringResource = "Open Tally"
@@ -112,5 +155,16 @@ struct TallyAppShortcuts: AppShortcutsProvider {
             shortTitle: "Open Tally",
             systemImageName: "number.circle.fill"
         )
+
+        #if TALLY_APPDB_EXTENSIONS || TALLY_FULL_SIGNING
+        AppShortcut(
+            intent: TestTallyLiveActivityIntent(),
+            phrases: [
+                "Test Live Activity in \(.applicationName)"
+            ],
+            shortTitle: "Test Live Activity",
+            systemImageName: "waveform.path.ecg.rectangle"
+        )
+        #endif
     }
 }
