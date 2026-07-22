@@ -26,8 +26,6 @@ enum TallySharedContainer {
     static let widgetSnapshotKey = "tally.widget.snapshot.v2"
     static let widgetSnapshotFileName = "TallyWidgetSnapshot-v2.json"
 
-    /// Resolve the identifier from the final installed bundle when possible instead of
-    /// assuming a re-signing service preserved the build-time identifier verbatim.
     static var widgetExtensionBundleIdentifier: String {
         if Bundle.main.bundleURL.pathExtension == "appex" {
             return Bundle.main.bundleIdentifier ?? expectedWidgetExtensionBundleIdentifier
@@ -50,8 +48,6 @@ enum TallySharedContainer {
         return expectedWidgetExtensionBundleIdentifier
     }
 
-    /// A real app-group container is the strongest runtime proof that the final
-    /// provisioning profile preserved the App Groups entitlement after AppDB re-signing.
     static var sharedContainerURL: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
     }
@@ -65,23 +61,44 @@ enum TallySharedContainer {
     }
 
     static func readWidgetSnapshot() -> TallyWidgetSnapshot {
-        // 1. Prefer a real file in the shared app-group container.
+        // 1. Normal supported path: App Group shared file.
         if let url = widgetSnapshotURL,
            let data = try? Data(contentsOf: url),
            let snapshot = try? JSONDecoder().decode(TallyWidgetSnapshot.self, from: data) {
             return snapshot
         }
 
-        // 2. Keep the App Group UserDefaults suite as a compatibility fallback.
+        // 2. Normal supported path: App Group shared preferences.
         if let defaults = UserDefaults(suiteName: appGroup),
            let data = defaults.data(forKey: widgetSnapshotKey),
            let snapshot = try? JSONDecoder().decode(TallyWidgetSnapshot.self, from: data) {
             return snapshot
         }
 
-        // 3. When this code is running inside TallyWidgets.appex, standard defaults are
-        // the widget extension's own preferences domain. The containing app publishes a
-        // copy there as an AppDB-friendly fallback that does not depend on App Groups.
+        // 3. AppDB fallback: explicitly refresh and read the widget extension's own
+        // preference domain. Do not rely only on UserDefaults.standard's cached view.
+        let extensionID = widgetExtensionBundleIdentifier
+        _ = CFPreferencesAppSynchronize(extensionID as CFString)
+
+        if let value = CFPreferencesCopyAppValue(
+            widgetSnapshotKey as CFString,
+            extensionID as CFString
+        ), let data = value as? Data,
+           let snapshot = try? JSONDecoder().decode(TallyWidgetSnapshot.self, from: data) {
+            return snapshot
+        }
+
+        if let value = CFPreferencesCopyValue(
+            widgetSnapshotKey as CFString,
+            extensionID as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        ), let data = value as? Data,
+           let snapshot = try? JSONDecoder().decode(TallyWidgetSnapshot.self, from: data) {
+            return snapshot
+        }
+
+        // 4. Final same-process cache fallback.
         if let data = UserDefaults.standard.data(forKey: widgetSnapshotKey),
            let snapshot = try? JSONDecoder().decode(TallyWidgetSnapshot.self, from: data) {
             return snapshot
@@ -110,17 +127,31 @@ enum TallySharedContainer {
             wroteSnapshot = true
         }
 
-        // Apple documents that a containing app can modify preferences for one of its
-        // own app extensions. Publish the same snapshot directly into the actual signed
-        // widget extension's preferences domain as a fallback for signing methods that
-        // preserve the extension but do not provision the App Group entitlement.
+        // AppDB fallback: Apple permits a containing app to modify preferences for one
+        // of its own extensions. Write both the high-level application domain and the
+        // exact CurrentUser/AnyHost domain, then force cfprefsd synchronization.
         let extensionID = widgetExtensionBundleIdentifier
         CFPreferencesSetAppValue(
             widgetSnapshotKey as CFString,
             data as CFData,
             extensionID as CFString
         )
-        if CFPreferencesAppSynchronize(extensionID as CFString) {
+        let appSynced = CFPreferencesAppSynchronize(extensionID as CFString)
+
+        CFPreferencesSetValue(
+            widgetSnapshotKey as CFString,
+            data as CFData,
+            extensionID as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+        let exactSynced = CFPreferencesSynchronize(
+            extensionID as CFString,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+
+        if appSynced || exactSynced {
             wroteSnapshot = true
         }
 
@@ -130,12 +161,8 @@ enum TallySharedContainer {
 
 struct TallySessionActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
-        /// Retained as a stable snapshot/fallback value.
         var elapsedSeconds: Int
-        /// Effective start date after subtracting accumulated paused time. SwiftUI can
-        /// use this to render a system-updating timer without ActivityKit pushes every second.
         var timerStartDate: Date
-        /// Non-nil while paused so SwiftUI freezes the timer at the correct instant.
         var timerPauseDate: Date?
         var isPaused: Bool
         var counterValue: Int?
