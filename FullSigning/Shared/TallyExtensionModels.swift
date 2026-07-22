@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import ActivityKit
 
 struct TallyWidgetCounterSnapshot: Codable, Identifiable, Hashable {
@@ -21,6 +22,7 @@ struct TallyWidgetSnapshot: Codable, Hashable {
 
 enum TallySharedContainer {
     static let appGroup = "group.com.samua.tally"
+    static let widgetExtensionBundleIdentifier = "com.samua.tally.widgets"
     static let widgetSnapshotKey = "tally.widget.snapshot.v2"
     static let widgetSnapshotFileName = "TallyWidgetSnapshot-v2.json"
 
@@ -39,18 +41,24 @@ enum TallySharedContainer {
     }
 
     static func readWidgetSnapshot() -> TallyWidgetSnapshot {
-        // Prefer a real file in the shared app-group container. This is more explicit
-        // and reliable across the host app/widget process boundary than relying only
-        // on UserDefaults suite propagation.
+        // 1. Prefer a real file in the shared app-group container.
         if let url = widgetSnapshotURL,
            let data = try? Data(contentsOf: url),
            let snapshot = try? JSONDecoder().decode(TallyWidgetSnapshot.self, from: data) {
             return snapshot
         }
 
-        // Keep the suite-backed snapshot as a compatibility fallback.
+        // 2. Keep the App Group UserDefaults suite as a compatibility fallback.
         if let defaults = UserDefaults(suiteName: appGroup),
            let data = defaults.data(forKey: widgetSnapshotKey),
+           let snapshot = try? JSONDecoder().decode(TallyWidgetSnapshot.self, from: data) {
+            return snapshot
+        }
+
+        // 3. When this code is running inside TallyWidgets.appex, standard defaults are
+        // the widget extension's own preferences domain. The containing app publishes a
+        // copy there as an AppDB-friendly fallback that does not depend on App Groups.
+        if let data = UserDefaults.standard.data(forKey: widgetSnapshotKey),
            let snapshot = try? JSONDecoder().decode(TallyWidgetSnapshot.self, from: data) {
             return snapshot
         }
@@ -68,15 +76,26 @@ enum TallySharedContainer {
                 try data.write(to: url, options: [.atomic])
                 wroteSnapshot = true
             } catch {
-                // UserDefaults below remains a fallback if the shared file write fails.
+                // Continue through the additional transports below.
             }
         }
 
         if let defaults = UserDefaults(suiteName: appGroup) {
             defaults.set(data, forKey: widgetSnapshotKey)
-            // synchronize() is intentionally used here as a best-effort cross-process
-            // flush before WidgetCenter asks the extension for a new timeline.
             defaults.synchronize()
+            wroteSnapshot = true
+        }
+
+        // Apple documents that a containing app can modify preferences for one of its
+        // own app extensions. Publish the same snapshot directly into the widget
+        // extension's preferences domain as a fallback for signing methods that preserve
+        // the extension but do not provision the App Group entitlement.
+        CFPreferencesSetAppValue(
+            widgetSnapshotKey as CFString,
+            data as CFData,
+            widgetExtensionBundleIdentifier as CFString
+        )
+        if CFPreferencesAppSynchronize(widgetExtensionBundleIdentifier as CFString) {
             wroteSnapshot = true
         }
 
